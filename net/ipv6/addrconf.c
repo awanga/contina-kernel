@@ -89,6 +89,11 @@
 #include <linux/seq_file.h>
 #include <linux/export.h>
 
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+#include <linux/if_vlan.h>
+#include <mach/cs_kernel_hook_api.h>
+#endif
+
 /* Set to 3 to get tracing... */
 #define ACONF_DEBUG 2
 
@@ -1829,6 +1834,9 @@ void addrconf_prefix_rcv(struct net_device *dev, u8 *opt, int len, bool sllao)
 	int addr_type;
 	struct inet6_dev *in6_dev;
 	struct net *net = dev_net(dev);
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+	__cs_ip_address_t ip_addr;
+#endif
 
 	pinfo = (struct prefix_info *) opt;
 
@@ -1967,6 +1975,15 @@ ok:
 				in6_dev_put(in6_dev);
 				return;
 			}
+
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+			memset(&ip_addr, 0, sizeof(__cs_ip_address_t));
+			memcpy(&ip_addr.ip_addr, &addr, sizeof(ip_addr.ip_addr));
+			ip_addr.afi = __CS_IPV6;
+
+			if (cs_kernel_hook_ops.kho_l3_intf_update_ip_addr != NULL)
+				cs_kernel_hook_ops.kho_l3_intf_update_ip_addr(0, dev->ifindex, &ip_addr);
+#endif
 
 			update_lft = create = 1;
 			ifp->cstamp = jiffies;
@@ -2196,6 +2213,11 @@ static int inet6_addr_add(struct net *net, int ifindex, const struct in6_addr *p
 	clock_t expires;
 	unsigned long timeout;
 
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+        __cs_ip_address_t ip_addr;
+#endif
+
+
 	ASSERT_RTNL();
 
 	if (plen > 128)
@@ -2242,6 +2264,25 @@ static int inet6_addr_add(struct net *net, int ifindex, const struct in6_addr *p
 		ifp->tstamp = jiffies;
 		spin_unlock_bh(&ifp->lock);
 
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+		/* do not create interface table entry if link local address */
+		if (!(ipv6_addr_type((const struct in6_addr *)&(pfx->s6_addr32[0])) & IPV6_ADDR_LINKLOCAL)) {
+
+	                ip_addr.afi = __CS_IPV6;
+			memcpy(&(ip_addr.ip_addr.ipv6_addr[0]), &(pfx->s6_addr32[0]), sizeof(ip_addr.ip_addr.ipv6_addr));
+                	ip_addr.addr_len = ifp->prefix_len;
+                	if (is_vlan_dev(dev)) {
+                        	printk("%s: dev->name=%s is a VLAN device!!\n", __func__, dev->name);
+                        	printk("%s: vlan_dev_vlan_id(dev)=%d, dev->if_port=%d, dev->addr_len=%d\n", __func__, vlan_dev_vlan_id(dev), dev->if_port, dev->addr_len);
+                        	printk("%s: dev->dev_addr[0-6]=0x%x-0x%x-0x%x-0x%x-0x%x-0x%x\n", __func__,
+                                	dev->dev_addr[0], dev->dev_addr[1], dev->dev_addr[2], dev->dev_addr[3], dev->dev_addr[4], dev->dev_addr[5]);
+                	}
+
+                	if (cs_kernel_hook_ops.kho_l3_intf_add != NULL)  
+                        	cs_kernel_hook_ops.kho_l3_intf_add(0, dev, &ip_addr, 0, 0);
+		}
+#endif
+
 		addrconf_prefix_route(&ifp->addr, ifp->prefix_len, dev,
 				      expires, flags);
 		/*
@@ -2276,6 +2317,12 @@ static int inet6_addr_del(struct net *net, int ifindex, const struct in6_addr *p
 		return -ENXIO;
 
 	read_lock_bh(&idev->lock);
+
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+	printk("%s: ifindex=%d, plen=%d\n", __func__, ifindex, plen);
+	printk("%s: pfx->s6_addr32[0-3]=0x%x-0x%x-0x%x-0x%x\n", __func__,
+		pfx->s6_addr32[0], pfx->s6_addr32[1], pfx->s6_addr32[2], pfx->s6_addr32[3]);
+#endif
 	list_for_each_entry(ifp, &idev->addr_list, if_list) {
 		if (ifp->prefix_len == plen &&
 		    ipv6_addr_equal(pfx, &ifp->addr)) {
@@ -2629,6 +2676,10 @@ static int addrconf_notify(struct notifier_block *this, unsigned long event,
 	int run_pending = 0;
 	int err;
 
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+        __cs_ip_address_t ip_addr;
+#endif
+
 	switch (event) {
 	case NETDEV_REGISTER:
 		if (!idev && dev->mtu >= IPV6_MIN_MTU) {
@@ -2671,6 +2722,13 @@ static int addrconf_notify(struct notifier_block *this, unsigned long event,
 					/* device is already configured. */
 					break;
 				idev->if_flags |= IF_READY;
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+                                memset(&ip_addr, 0, sizeof(__cs_ip_address_t));
+                                ip_addr.afi = __CS_IPV6;
+
+                                if (cs_kernel_hook_ops.kho_l3_intf_add != NULL)  
+                                        cs_kernel_hook_ops.kho_l3_intf_add(0, dev, &ip_addr, 0, 0);
+#endif
 			}
 
 			printk(KERN_INFO
@@ -2805,6 +2863,10 @@ static int addrconf_ifdown(struct net_device *dev, int how)
 
 	ASSERT_RTNL();
 
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+	printk("%s: dev->name=%s, dev->ifindex=%d\n", __func__, dev->name, dev->ifindex);
+#endif
+
 	rt6_ifdown(net, dev);
 	neigh_ifdown(&nd_tbl, dev);
 
@@ -2889,6 +2951,15 @@ static int addrconf_ifdown(struct net_device *dev, int how)
 		if (state != INET6_IFADDR_STATE_DEAD) {
 			__ipv6_ifa_notify(RTM_DELADDR, ifa);
 			atomic_notifier_call_chain(&inet6addr_chain, NETDEV_DOWN, ifa);
+
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+        	if (!(ipv6_addr_type(&ifa->addr) & IPV6_ADDR_LINKLOCAL)) {
+                	if (cs_kernel_hook_ops.kho_l3_route_del_ipv6_ifdown != NULL)
+                        	cs_kernel_hook_ops.kho_l3_route_del_ipv6_ifdown(0, dev->ifindex);
+        	}
+#endif
+
+
 		}
 		in6_ifa_put(ifa);
 

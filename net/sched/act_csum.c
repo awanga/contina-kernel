@@ -11,6 +11,7 @@
  */
 
 #include <linux/types.h>
+#include <linux/if_vlan.h>
 #include <linux/init.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
@@ -50,6 +51,19 @@ static struct tcf_hashinfo csum_hash_info = {
 static const struct nla_policy csum_policy[TCA_CSUM_MAX + 1] = {
 	[TCA_CSUM_PARMS] = { .len = sizeof(struct tc_csum), },
 };
+
+static inline __be16 tcf_csum_protocol(const struct sk_buff *skb)
+{
+	__be16 protocol = vlan_get_protocol(skb);
+	if (protocol == cpu_to_be16(ETH_P_8021Q)) {
+		__be16 *protop = skb_header_pointer(skb,
+				offsetof(struct vlan_ethhdr, h_vlan_encapsulated_proto) + VLAN_HLEN,
+				sizeof(protocol), &protocol);
+		if (likely(protop))
+			protocol = *protop;
+	}
+	return protocol;
+}
 
 static int tcf_csum_init(struct nlattr *nla, struct nlattr *est,
 			 struct tc_action *a, int ovr, int bind)
@@ -516,7 +530,7 @@ static int tcf_csum(struct sk_buff *skb,
 	if (unlikely(action == TC_ACT_SHOT))
 		goto drop;
 
-	switch (skb->protocol) {
+	switch (tcf_csum_protocol(skb)) {
 	case cpu_to_be16(ETH_P_IP):
 		if (!tcf_csum_ipv4(skb, update_flags))
 			goto drop;

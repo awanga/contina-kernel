@@ -1118,6 +1118,10 @@ void __mark_inode_dirty(struct inode *inode, int flags)
 		if (!was_dirty) {
 			bool wakeup_bdi = false;
 			bdi = inode_to_bdi(inode);
+#ifdef CONFIG_ARCH_GOLDENGATE
+			if (!bdi)
+				goto out_unlock_inode;
+#endif /* CONFIG_ARCH_GOLDENGATE */
 
 			if (bdi_cap_writeback_dirty(bdi)) {
 				WARN(!test_bit(BDI_registered, &bdi->state),

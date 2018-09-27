@@ -279,6 +279,21 @@
 #include <asm/uaccess.h>
 #include <asm/ioctls.h>
 
+#ifdef CONFIG_VFS_FASTPATH
+/* G2 fast path implementation */
+struct g2_tcp_sysctl {
+        unsigned int sendfile;
+        unsigned int recvfile;
+        unsigned int mpages;
+        unsigned int ackcnt;
+        unsigned int var1;
+        unsigned int var2;
+        unsigned int iscsi_tx_acc;
+        unsigned int iscsi_rx_acc;
+} g2_tcp_ctl;
+
+extern u32 cs_ni_use_sendfile;
+#endif
 int sysctl_tcp_fin_timeout __read_mostly = TCP_FIN_TIMEOUT;
 
 struct percpu_counter tcp_orphan_count;
@@ -871,6 +886,259 @@ out_err:
 	return sk_stream_error(sk, flags, err);
 }
 
+#ifdef CONFIG_VFS_FASTPATH
+/* G2 fast path implementation */
+static ssize_t do_tcp_send_mpages(struct sock *sk, struct page **pages,
+                int poffset, size_t psize, int flags)
+{
+        struct tcp_sock *tp = tcp_sk(sk);
+        int mss_now, size_goal, goal;
+        int err;
+        int push_flag = 0,page_count=0;
+        ssize_t copied;
+        long timeo = sock_sndtimeo(sk, flags & MSG_DONTWAIT);
+        struct inet_sock        *inet;
+        int page_nbr = 0;
+
+        /* Wait for a connection to finish. */
+        if ((1 << sk->sk_state) & ~(TCPF_ESTABLISHED | TCPF_CLOSE_WAIT))
+                if ((err = sk_stream_wait_connect(sk, &timeo)) != 0)
+                {
+                        goto out_err;
+                }
+
+        clear_bit(SOCK_ASYNC_NOSPACE, &sk->sk_socket->flags);
+        mss_now = tcp_send_mss(sk, &size_goal, flags);
+        inet = inet_sk(sk);
+
+#if 0 // FIXME
+        size_goal = tp->xmit_size_goal;
+        if (ntohs(inet->sport) == 20 && g2_tcp_ctl.var2 >0)
+                size_goal /= g2_tcp_ctl.var2;
+#endif
+
+        if (g2_tcp_ctl.mpages > 1)
+                goal = (g2_tcp_ctl.mpages - 1) * PAGE_SIZE;     /* configurable page number */
+        else
+                goal = (g2_tcp_ctl.mpages) * PAGE_SIZE; /* configurable page number */
+        if (size_goal > goal)
+                size_goal = goal;
+
+        copied = 0;
+
+        err = -EPIPE;
+        if (sk->sk_err || (sk->sk_shutdown & SEND_SHUTDOWN))
+        {
+                printk("%s: err=-EPIPE!!!\r\n", __func__);
+                goto do_error;
+        }
+
+        if (g2_tcp_ctl.recvfile == 3) {
+                if (size_goal >= tp->snd_wnd)
+                        size_goal = tp->snd_wnd;
+        }
+
+        if (g2_tcp_ctl.recvfile==2)
+        {
+              printk("*** psize=%d poffset=%d mss_now=%d size_goal=%d ***\n",psize,poffset,mss_now,size_goal);
+        }
+
+        while (psize > 0)
+        {
+                struct sk_buff *skb = tcp_write_queue_tail(sk);
+                struct page *page = pages[poffset / PAGE_SIZE];
+                int copy, i, can_coalesce;
+                int offset = poffset % PAGE_SIZE;
+                int size = min_t(size_t, psize, PAGE_SIZE - offset); /* offset > 0 : the first page */
+                                                                                                                         /* psize < PAGE_SIZE : the last page */
+
+                if (!tcp_send_head(sk) || (copy = size_goal - skb->len) <= 0) {
+new_segment:
+                        if (!sk_stream_memory_free(sk))
+                        {
+                                goto wait_for_sndbuf;
+                        }
+
+                        skb = sk_stream_alloc_skb(sk, 0, sk->sk_allocation);
+                        if (!skb)
+                        {
+                                printk("%s: goto wait_for_memory\r\n", __func__);
+                                goto wait_for_memory;
+                        }
+
+                        push_flag = 1;  /* has created a new skb */
+                        skb_entail(sk, skb);
+                        copy = size_goal;
+                }
+
+                copy = size;
+
+                i = skb_shinfo(skb)->nr_frags;
+                can_coalesce = skb_can_coalesce(skb, i, page, offset);
+                if (!can_coalesce && i >= MAX_SKB_FRAGS)
+                {
+                        tcp_mark_push(tp, skb);
+                        goto new_segment;
+                }
+                if (!sk_wmem_schedule(sk, copy))
+                        goto wait_for_memory;
+
+                if (can_coalesce)
+                {
+                        skb_shinfo(skb)->frags[i - 1].size += copy;
+                } else
+                {
+                        get_page(page);
+                        skb_fill_page_desc(skb, i, page, offset, copy);
+		}
+
+                skb->len += copy;
+                skb->data_len += copy;
+                skb->truesize += copy;
+                sk->sk_wmem_queued += copy;
+                sk->sk_forward_alloc -= copy;
+                skb->ip_summed = CHECKSUM_PARTIAL;
+                tp->write_seq += copy;
+                TCP_SKB_CB(skb)->end_seq += copy;
+                skb_shinfo(skb)->gso_segs = 0;
+
+                if (!copied)
+                        TCP_SKB_CB(skb)->tcp_flags &= ~TCPHDR_PSH;
+
+                copied += copy;
+                poffset += copy;
+                page_count++;
+                if (!(psize -= copy))
+                {
+                        if (g2_tcp_ctl.recvfile==2)
+                        {
+                                printk("%s: skb->len=%d, page_count=%d\r\n", __func__, skb->len, page_count);
+                        }
+                        goto out;
+                }
+
+                if (skb->len < size_goal || (flags & MSG_OOB))
+                {
+                        continue;
+                }
+
+        /* if it allocated a new skb or nr_frags > user defined page number, push this skb to tx queue */
+                if ( (push_flag==1) || ( page_count>=g2_tcp_ctl.mpages) )
+                {
+                        if (forced_push(tp))
+                        {
+                                tcp_mark_push(tp, skb);
+                                __tcp_push_pending_frames(sk, mss_now, TCP_NAGLE_PUSH);
+                        } else if (skb == tcp_send_head(sk))
+                        {
+                                tcp_push_one(sk, mss_now);
+                        }
+                        push_flag=0;
+                        page_count=0;
+                }
+
+                continue;
+
+wait_for_sndbuf:
+                set_bit(SOCK_NOSPACE, &sk->sk_socket->flags);
+wait_for_memory:
+                if (copied)
+                {
+         		tcp_push(sk, flags & ~MSG_MORE, mss_now, TCP_NAGLE_PUSH);
+                }
+
+                if ((err = sk_stream_wait_memory(sk, &timeo)) != 0)
+                {
+                        if (g2_tcp_ctl.recvfile==2)
+                                printk("%s: sk_stream_wait_memory(), err=%d\r\n", __func__, err);
+
+                        goto do_error;
+                }
+
+                mss_now = tcp_send_mss(sk, &size_goal, flags);
+                if (g2_tcp_ctl.mpages > 1)
+                        goal = (g2_tcp_ctl.mpages - 1) * PAGE_SIZE;   /* configurable page number */
+        else
+                goal = (g2_tcp_ctl.mpages) * PAGE_SIZE;       /* configurable page number */
+
+        if (size_goal > goal)
+                size_goal = goal;
+
+                cond_resched();
+
+                if (g2_tcp_ctl.recvfile==2)
+                {
+                        printk("%s: wait_for_memory(), mss_now=%d, size_goal=%d\r\n", __func__, mss_now, size_goal);
+                }
+        }
+
+out:
+        page_count=0;
+        if (copied)
+                tcp_push(sk, flags, mss_now, tp->nonagle);
+        return copied;
+
+do_error:
+        if (copied)
+                goto out;
+out_err:
+        return sk_stream_error(sk, flags, err);
+}
+int tcp_sendpages(struct sock *sk, struct pipe_inode_info *pipe, int offset,
+                 size_t size, int flags)
+{
+        ssize_t res = 0;
+        size_t copied = 0;
+        size_t per_tx_size=0;
+        size_t per_offset = offset;
+        struct page *pages[PIPE_DEF_BUFFERS]= {0};
+        struct pipe_buffer *buf = pipe->bufs + pipe->curbuf;
+        struct pipe_buffer *tmp = buf;
+        int i;
+
+        if (!(sk->sk_route_caps & NETIF_F_SG) ||
+            !(sk->sk_route_caps & NETIF_F_ALL_CSUM)) {
+
+                for (;;) {
+                        if (!tmp->page || copied == size) {
+                                if (res == per_tx_size)
+                                        res = copied;
+                                return copied;
+                        }
+
+                        per_offset = (offset + copied) % PAGE_SIZE;
+                        per_tx_size = min_t(size_t, size-copied, (PAGE_SIZE-per_offset));
+                        res = sock_no_sendpage(sk->sk_socket, tmp->page, offset, per_tx_size, flags);
+
+                        if (res < 0){
+                                if (copied)     return copied;
+                                else return res;
+                        }
+
+                        copied += res;
+                        if ( (res == per_tx_size) && (tmp < buf + pipe->nrbufs))
+                                tmp ++;
+                }
+        }
+
+        // to send pages
+
+        for(i=0; i< pipe->nrbufs; i++){
+                pages[i] = buf[i].page;
+        }
+
+        lock_sock(sk);
+
+        res = do_tcp_send_mpages(sk, pages, offset, size, flags);
+        release_sock(sk);
+        return res;
+}
+
+EXPORT_SYMBOL(tcp_sendpages);
+
+/* end */
+#endif
+                                               
 int tcp_sendpage(struct sock *sk, struct page *page, int offset,
 		 size_t size, int flags)
 {
@@ -1699,6 +1967,12 @@ do_prequeue:
 			} else
 #endif
 			{
+#ifdef CONFIG_VFS_FASTPATH
+                                if (cs_ni_use_sendfile & 0x10) // G2NAS enhancement
+                                        err = skb_copy_datagram_to_kernel_iovec(skb, offset,
+                                                        msg->msg_iov, used);
+                                else
+#endif
 				err = skb_copy_datagram_iovec(skb, offset,
 						msg->msg_iov, used);
 				if (err) {
@@ -1825,6 +2099,590 @@ void tcp_set_state(struct sock *sk, int state)
 #endif
 }
 EXPORT_SYMBOL_GPL(tcp_set_state);
+
+#ifdef CONFIG_VFS_FASTPATH
+#ifdef CONFIG_SL2312_RECVFILE
+int do_tcp_recvpages(struct sock* sk, char* buf, int len, int nonblock, int flags, int *ftpFinFlag)
+{
+        struct tcp_sock* tp = tcp_sk(sk);
+        int copied = 0;
+        u32 peek_seq = 0;
+        u32 *seq;
+        unsigned long used;
+
+        int err;
+        int target;
+        long timeo;
+        struct task_struct *user_recv = NULL;
+
+        // lock_sock(sk); // we locked sock in tcp_recvpage() already..?
+        // TCP_CHECK_TIMER(sk); // we checked timer in tcp_recvpage() as well.
+        err = -ENOTCONN;
+
+        if (sk->sk_state == TCP_LISTEN)
+                goto out;
+
+        timeo = sock_rcvtimeo(sk, nonblock);
+        if (flags & MSG_OOB)
+                goto recv_urg;
+
+        seq = &tp->copied_seq;
+        if (flags & MSG_PEEK) {
+                peek_seq = tp->copied_seq;
+                seq = &peek_seq;
+        }
+        target = sock_rcvlowat(sk, flags & MSG_WAITALL, len);
+        do {
+                struct sk_buff* skb;
+                u32 offset;
+
+                if (tp->urg_data && tp->urg_seq == *seq) {
+                        if (copied)
+                                break;
+                        if (signal_pending(current)) {
+                                copied = timeo ? sock_intr_errno(timeo) : -EAGAIN;
+                                break;
+                        }
+                }
+                skb = skb_peek(&sk->sk_receive_queue);
+
+                do {
+                        if (!skb)
+                                break;
+                        if (before(*seq, TCP_SKB_CB(skb)->seq)) {
+                                printk(KERN_INFO "Recvpage bug: copied %x, seq %x\n",
+                                                                                                *seq, TCP_SKB_CB(skb)->seq);
+                                break;
+                        }
+                        offset = *seq - TCP_SKB_CB(skb)->seq;
+                      	if (skb->h.th->syn)
+                                offset --;
+                        if (offset < skb->len)
+                                goto found_ok_skb;
+                        if (skb->h.th->fin)
+                                goto found_fin_ok;
+                        BUG_TRAP(flags & MSG_PEEK);
+                        skb = skb->next;
+                } while (skb != (struct sk_buff*) &sk->sk_receive_queue);
+
+                /* process backlog queue now */
+                if (copied >= target && !sk->sk_backlog.tail)
+                        break;
+                if (copied) {
+                        if (sk->sk_err || sk->sk_state == TCP_CLOSE ||
+                           (sk->sk_shutdown & RCV_SHUTDOWN) ||
+                                 (!timeo) || signal_pending(current) ||
+                                 (flags & MSG_PEEK))
+                                break;
+                } else {
+                        if (sock_flag(sk, SOCK_DONE))
+                                break;
+                        if (sk->sk_err) {
+                                copied = sock_error(sk);
+                                break;
+                        }
+                        if (sk->sk_shutdown & RCV_SHUTDOWN)
+                                break;
+                        if (sk->sk_state == TCP_CLOSE) {
+                                if (!sock_flag(sk, SOCK_DONE)) {
+                                        copied = -ENOTCONN;
+                                        break;
+                                }
+                                break;
+                        }
+                        if (!timeo) {
+                                copied = -EAGAIN;
+                                break;
+                        }
+
+                        if (signal_pending(current)) {
+                                copied = sock_intr_errno(timeo);
+                                break;
+                        }
+                }
+                cleanup_rbuf(sk, copied);
+/*
+                // we skip fast path too.
+                if (tp->ucopy.task == user_recv) {
+                        if (!user_recv && !(flags & (MSG_TRUNC | MSG_PEEK))) {
+                                user_recv = current;
+                                tp->ucopy.task = user_recv;
+                                tp->ucopy.iov = buf;
+                    }
+                        tp->ucopy.len = len;
+                        BUG_TRAP(tp->copied_seq == tp->rcv_nxt ||
+                                 (flags & (MSG_PEEK | MSG_TRUNC)));
+
+                        if (skb_queue_len(&tp->ucopy.prequeue))
+                                goto do_prequeue;
+                }
+*/
+                if (copied >= target) {
+                        // can we do this here?
+                        release_sock(sk);
+                        lock_sock(sk);
+                } else
+                        sk_wait_data(sk, &timeo);
+
+                if (user_recv) {
+                        int chunk;
+                        if ((chunk = len - tp->ucopy.len) != 0) {
+                                NET_ADD_STATS_USER(LINUX_MIB_TCPDIRECTCOPYFROMBACKLOG, chunk);
+                                len -= chunk;
+                                copied = chunk;
+                        }
+                        if (tp->rcv_nxt == tp->copied_seq &&
+                             skb_queue_len(&tp->ucopy.prequeue)) {
+//do_prequeue:
+                                tcp_prequeue_process(sk);
+                                if ((chunk = len - tp->ucopy.len) != 0) {
+                                        NET_ADD_STATS_USER(LINUX_MIB_TCPDIRECTCOPYFROMPREQUEUE, chunk);
+                                        len -= chunk;
+                                        copied -= chunk;
+                                }
+                        }
+                }
+                if ((flags & MSG_PEEK) && peek_seq != tp->copied_seq) {
+                        if (net_ratelimit())
+                                printk(KERN_DEBUG "TCP(%s:%d): Application bug, race in MSG_PEEK.\n",
+                                                                                                current->comm, current->pid);
+                        peek_seq = tp->copied_seq;
+                }
+                continue;
+
+found_ok_skb:
+                used = skb->len - offset;
+                if (len < used)
+                        used = len;
+                if (tp->urg_data) {
+                        u32 urg_offset = tp->urg_seq - *seq;
+                        if (urg_offset < used) {
+                                if (!urg_offset) {
+                                        if (!sock_flag(sk, SOCK_URGINLINE)) {
+                                                ++*seq;
+     						offset++;
+                                                used --;
+                                                if (!used)
+                                                        goto skip_copy;
+                                        }
+                                } else
+                                        used = urg_offset;
+                        }
+                }
+                if (!(flags & MSG_TRUNC)) {
+                        // fill the page data with skb data
+                        memcpy(buf+copied, skb->data+offset, used);
+                }
+                *seq += used;
+                copied += used;
+                len -= used;
+
+skip_copy:
+                if (tp->urg_data && after(tp->copied_seq, tp->urg_seq)) {
+                        tp->urg_data = 0;
+                        tcp_fast_path_check(sk, tp);
+                }
+                if (used + offset < skb->len)
+                        continue;
+
+                if (skb->h.th->fin) {
+                        //printk("recvpage find fin!\n");
+                        goto found_fin_ok;
+                }
+                if (!(flags & MSG_PEEK)) {
+                        sk_eat_skb(sk, skb);
+                }
+                continue;
+
+found_fin_ok:
+    		*ftpFinFlag = 1;  // Zachary
+                ++*seq;
+                if (!(flags & MSG_PEEK))
+                        sk_eat_skb(sk, skb);
+                break;
+        } while (len > 0);
+
+        if (user_recv) {
+                if (skb_queue_len(&tp->ucopy.prequeue)) {
+                        int chunk;
+                        tp->ucopy.len = copied > 0 ? len : 0;
+                        tcp_prequeue_process(sk);
+                        if (copied > 0 && (chunk = len-tp->ucopy.len) != 0) {
+                                NET_ADD_STATS_USER(LINUX_MIB_TCPDIRECTCOPYFROMPREQUEUE, chunk);
+                                len -= chunk;
+       				copied += chunk;
+                        }
+                }
+                tp->ucopy.task = NULL;
+                tp->ucopy.len = 0;
+        }
+        cleanup_rbuf(sk, copied);
+        return copied;
+
+out:
+        return err;
+
+recv_urg:
+        // do we process urg data here?
+        goto out;
+}
+
+
+int tcp_recvpage(struct socket *sock, char* buf, size_t size, int nonblock,
+        int flags, int *ftpFinFlag)
+{
+        ssize_t res;
+        struct sock *sk = sock->sk;
+
+        printk("%s\n",__func__);
+        lock_sock(sk);
+        TCP_CHECK_TIMER(sk);
+        res = do_tcp_recvpages(sk, buf, size, nonblock, flags, ftpFinFlag);
+        TCP_CHECK_TIMER(sk);
+        release_sock(sk);
+        return res;
+}
+int sk_backlog_data_len(struct socket* sock)
+{
+        struct sk_buff* skb;
+        int data_len=0;
+        int i=0;
+        struct sock* sk = sock->sk;
+        struct tcp_sock *tp = tcp_sk(sk);
+        int qlen;
+        u32 copied_seq;
+        lock_sock(sk);
+        copied_seq = tp->copied_seq;
+        qlen = sk->sk_receive_queue.qlen;
+        skb = skb_peek(&sk->sk_receive_queue);
+
+        for (i=0; i< qlen; i++) {
+                if (skb) {
+                        if (i) {
+                                data_len += (s32)(TCP_SKB_CB(skb)->end_seq - TCP_SKB_CB(skb)->seq);
+                        } else {
+                                data_len += (s32)(TCP_SKB_CB(skb)->end_seq - copied_seq);
+                        }
+                        skb = skb->next;
+                }
+        }
+
+        skb = (struct sk_buff*)sk->sk_backlog.head;
+        while (skb) {
+                data_len += (s32)(TCP_SKB_CB(skb)->end_seq - TCP_SKB_CB(skb)->seq);
+                skb = skb->next;
+        }
+
+        qlen = tp->ucopy.prequeue.qlen;
+        skb = skb_peek(&tp->ucopy.prequeue);
+        for (i=0; i<qlen; i++) {
+                if (skb) {
+                        if (i)
+                                data_len += (s32)(TCP_SKB_CB(skb)->end_seq - TCP_SKB_CB(skb)->seq);
+                        else
+                                data_len += (s32)(TCP_SKB_CB(skb)->end_seq - copied_seq);
+                        skb = skb->next;
+                }
+        }
+        release_sock(sk);
+        return data_len;
+}
+
+int do_tcp_recv_mpages(struct sock *sk, struct page_chain* chain, int poffset, size_t len, int nonblock, int flags, int *ftpFinFlag)
+{
+        struct tcp_sock *tp = tcp_sk(sk);
+        int copied = 0;
+        u32 peek_seq;
+        u32 *seq;
+        unsigned long used;
+        int err;
+        int target;
+        long timeo;
+        struct task_struct *user_recv = NULL;
+
+        int copied_pages = 1;
+        int poff;
+        int buf_len;
+        char *page_addr;
+
+        err = -ENOTCONN;
+        if (sk->sk_state == TCP_LISTEN)
+                goto out;
+
+        timeo = sock_rcvtimeo(sk, nonblock);
+
+        /* Urgent data needs to be handled specially. */
+        if (flags & MSG_OOB)
+                goto recv_urg;
+
+        seq = &tp->copied_seq;
+        if (flags & MSG_PEEK) {
+                peek_seq = tp->copied_seq;
+                seq = &peek_seq;
+        }
+
+        target = sock_rcvlowat(sk, flags & MSG_WAITALL, len);
+
+        poff = poffset;
+        buf_len = PAGE_SIZE - poff;
+        if (buf_len >len)
+                buf_len = len;
+
+        page_addr = kmap(chain->page);
+
+        do {
+                struct sk_buff *skb;
+                u32 offset;
+
+                /* Are we at urgent data? Stop if we have read anything or have SIGURG pending. */
+                if (tp->urg_data && tp->urg_seq == *seq) {
+                        if (copied)
+                                break;
+                        if (signal_pending(current)) {
+                                copied = timeo ? sock_intr_errno(timeo) : -EAGAIN;
+                                break;
+                        }
+                                                               }
+
+                /* Next get a buffer. */
+
+                skb = skb_peek(&sk->sk_receive_queue);
+                do {
+                        if (!skb)
+                                break;
+
+                        /* Now that we have two receive queues this
+                         * shouldn't happen.
+                         */
+                        if (before(*seq, TCP_SKB_CB(skb)->seq)) {
+                                printk(KERN_INFO "recvmsg bug: copied %X "
+                                       "seq %X\n", *seq, TCP_SKB_CB(skb)->seq);
+                                break;
+                        }
+                        offset = *seq - TCP_SKB_CB(skb)->seq;
+                        if (skb->h.th->syn)
+                                offset--;
+                        if (offset < skb->len)
+                                goto found_ok_skb;
+                        if (skb->h.th->fin)
+                                goto found_fin_ok;
+                        BUG_TRAP(flags & MSG_PEEK);
+                        skb = skb->next;
+                } while (skb != (struct sk_buff *)&sk->sk_receive_queue);
+
+                /* Well, if we have backlog, try to process it now yet. */
+
+                if (copied >= target && !sk->sk_backlog.tail)
+                        break;
+
+                if (copied) {
+                        if (sk->sk_err ||
+                            sk->sk_state == TCP_CLOSE ||
+                            (sk->sk_shutdown & RCV_SHUTDOWN) ||
+                            !timeo ||
+                            signal_pending(current) ||
+                            (flags & MSG_PEEK))
+                                break;
+                } else {
+                        if (sock_flag(sk, SOCK_DONE))
+                                break;
+
+                        if (sk->sk_err) {
+                                //copied = sock_error(sk);
+       				printk("sock_err()\n");
+                                break;
+                        }
+
+                        if (sk->sk_shutdown & RCV_SHUTDOWN)
+                                break;
+
+                        if (sk->sk_state == TCP_CLOSE) {
+                                if (!sock_flag(sk, SOCK_DONE)) {
+                                        /* This occurs when user tries to read
+                                         * from never connected socket.
+                                         */
+                                        copied = -ENOTCONN;
+                                        break;
+                                }
+                                break;
+                        }
+
+                        if (!timeo) {
+                                //copied = -EAGAIN;
+                                printk("copyied=-EAGAIN\n");
+                                copied = 0;
+                                break;
+                        }
+
+                        if (signal_pending(current)) {
+                                copied = sock_intr_errno(timeo);
+                                break;
+                        }
+                }
+
+                cleanup_rbuf(sk, copied);
+
+                if (copied >= target) {
+                        /* Do not sleep, just process backlog. */
+                        release_sock(sk);
+                        lock_sock(sk);
+                } else
+                        sk_wait_data(sk, &timeo);
+
+                if (user_recv) {
+                        int chunk;
+
+                        /* __ Restore normal policy in scheduler __ */
+
+                        if ((chunk = len - tp->ucopy.len) != 0) {
+                                NET_ADD_STATS_USER(LINUX_MIB_TCPDIRECTCOPYFROMBACKLOG, chunk);
+                                len -= chunk;
+                                copied += chunk;
+                        }
+
+                        if (tp->rcv_nxt == tp->copied_seq &&
+                                !skb_queue_empty(&tp->ucopy.prequeue)) {
+//do_prequeue:
+                                tcp_prequeue_process(sk);
+
+                                if ((chunk = len - tp->ucopy.len) != 0) {
+                                        NET_ADD_STATS_USER(LINUX_MIB_TCPDIRECTCOPYFROMPREQUEUE, chunk);
+                                        len -= chunk;
+                                        copied += chunk;
+                                }
+                        }
+                }
+                if ((flags & MSG_PEEK) && peek_seq != tp->copied_seq) {
+                        if (net_ratelimit())
+                                printk(KERN_DEBUG "TCP(%s:%d): Application bug, race in MSG_PEEK.\n",
+                                       current->comm, current->pid);
+                        peek_seq = tp->copied_seq;
+                }
+                continue;
+
+        found_ok_skb:
+                /* Ok so how much can we use? */
+                used = skb->len - offset;
+                if (len < used)
+                        used = len;
+
+                /* Do we have urgent data here? */
+                if (tp->urg_data) {
+                        u32 urg_offset = tp->urg_seq - *seq;
+                        if (urg_offset < used) {
+                                if (!urg_offset) {
+                                        if (!sock_flag(sk, SOCK_URGINLINE)) {
+                                                ++*seq;
+                                                offset++;
+                                                used--;
+                                                if (!used)
+                                                        goto skip_copy;
+                                        }
+                                } else
+                                        used = urg_offset;
+                        }
+                }
+
+                if (!(flags & MSG_TRUNC)) {
+                        if (buf_len < used)
+                                used = buf_len;
+                        memcpy(page_addr+poff, skb->data+offset, used);
+                        //printk("poff %d, offset %d, used %d, buf_len %d\n",
+                        //      poff, offset, used, buf_len);
+                        poff += used;
+                        if (poff >= PAGE_SIZE) {
+                                poff = 0;
+                                chain = chain->next;
+                                copied_pages ++;
+   				if (chain)
+                                        page_addr = kmap(chain->page);
+                        }
+                        buf_len = PAGE_SIZE - poff;
+                }
+
+                *seq += used;
+                copied += used;
+                len -= used;
+
+                tcp_rcv_space_adjust(sk);
+
+skip_copy:
+                if (tp->urg_data && after(tp->copied_seq, tp->urg_seq)) {
+                        tp->urg_data = 0;
+                        tcp_fast_path_check(sk, tp);
+                }
+                if (used + offset < skb->len)
+                        continue;
+
+                if (skb->h.th->fin)
+                        goto found_fin_ok;
+                if (!(flags & MSG_PEEK))
+                        sk_eat_skb(sk, skb);
+                continue;
+
+        found_fin_ok:
+                /* Process the FIN. */
+                *ftpFinFlag=1; /*FTP FIN*/
+
+                ++*seq;
+                if (!(flags & MSG_PEEK))
+                        sk_eat_skb(sk, skb);
+                break;
+        } while (len > 0 && chain);
+
+        if (user_recv) {
+                if (!skb_queue_empty(&tp->ucopy.prequeue)) {
+                        int chunk;
+
+                        tp->ucopy.len = copied > 0 ? len : 0;
+
+                        tcp_prequeue_process(sk);
+
+                        if (copied > 0 && (chunk = len - tp->ucopy.len) != 0) {
+                                NET_ADD_STATS_USER(LINUX_MIB_TCPDIRECTCOPYFROMPREQUEUE, chunk);
+                                len -= chunk;
+                                copied += chunk;
+                        }
+                }
+
+                tp->ucopy.task = NULL;
+                tp->ucopy.len = 0;
+        }
+
+        /* According to UNIX98, msg_name/msg_namelen are ignored
+         * on connected socket. I was just happy when found this 8) --ANK
+         */
+
+        /* Clean up data we have read: This will do ACK frames. */
+        cleanup_rbuf(sk, copied);
+
+        return copied;
+
+out:
+        return err;
+ recv_urg:
+        goto out;
+}
+
+//int tcp_recv_mpages(struct socket* sock, struct page_chain* chain, int offset, size_t size, int nonblock, int flags)
+int tcp_recv_mpages(struct socket* sock, struct page_chain* chain, int offset, size_t size, int nonblock, int flags, int *ftpFinFlag) // Zachary
+{
+        ssize_t res;
+        struct sock *sk = sock->sk;
+
+        lock_sock(sk);
+        TCP_CHECK_TIMER(sk);
+//      printk("tcp_rcv_mpages\n");
+        //res = do_tcp_recv_mpages(sk, chain, offset, size, nonblock, flags);
+        res = do_tcp_recv_mpages(sk, chain, offset, size, nonblock, flags, ftpFinFlag); // Zachary
+
+        TCP_CHECK_TIMER(sk);
+        release_sock(sk);
+        return res;
+}
+
+#endif /*CONFIG_SL2312_RECVFILE*/
+#endif
 
 /*
  *	State processing on a close. This implements the state shift for
@@ -3338,4 +4196,14 @@ void __init tcp_init(void)
 	tcp_secret_primary = &tcp_secret_one;
 	tcp_secret_retiring = &tcp_secret_two;
 	tcp_secret_secondary = &tcp_secret_two;
+#ifdef CONFIG_VFS_FASTPATH
+        g2_tcp_ctl.sendfile = 1;
+        g2_tcp_ctl.recvfile = 1;
+        g2_tcp_ctl.mpages = 16;
+        g2_tcp_ctl.ackcnt = 8192;
+        g2_tcp_ctl.var1 = 4096;
+        g2_tcp_ctl.var2 = 2;
+        g2_tcp_ctl.iscsi_tx_acc = 1;
+        g2_tcp_ctl.iscsi_rx_acc = 0;
+#endif
 }

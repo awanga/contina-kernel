@@ -23,13 +23,22 @@
 #include <linux/of.h>
 #include <linux/of_address.h>
 
+#ifdef CONFIG_ARCH_GOLDENGATE
+#include <linux/module.h> // --added to have "EXPORT_SYMBOL"
+#endif /* CONFIG_ARCH_GOLDENGATE */
 #include <asm/cacheflush.h>
 #include <asm/hardware/cache-l2x0.h>
 
 #define CACHE_LINE_SIZE		32
 
 static void __iomem *l2x0_base;
+#ifndef CONFIG_ARCH_GOLDENGATE
 static DEFINE_RAW_SPINLOCK(l2x0_lock);
+#else /* CONFIG_ARCH_GOLDENGATE */
+/*static*/ DEFINE_RAW_SPINLOCK(l2x0_lock);
+EXPORT_SYMBOL(l2x0_lock);    // --exported lock handle for wl.ko
+#endif /* CONFIG_ARCH_GOLDENGATE */
+
 static u32 l2x0_way_mask;	/* Bitmask of active ways */
 static u32 l2x0_size;
 static unsigned long sync_reg_offset = L2X0_CACHE_SYNC;
@@ -322,6 +331,10 @@ void __init l2x0_init(void __iomem *base, u32 aux_val, u32 aux_mask)
 	aux &= aux_mask;
 	aux |= aux_val;
 
+#ifdef CONFIG_PL310_ERRATA_780370
+	/* Disable parity check */
+	aux &= ~0x00200000;
+#endif
 	/* Determine the number of ways */
 	switch (cache_id & L2X0_CACHE_ID_PART_MASK) {
 	case L2X0_CACHE_ID_PART_L310:

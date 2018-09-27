@@ -471,7 +471,8 @@ static void tcp_write_timer(unsigned long data)
 
 	switch (event) {
 	case ICSK_TIME_RETRANS:
-		tcp_retransmit_timer(sk);
+		if (likely(sk->sk_state != TCP_SYN_SENT || icsk->icsk_syn_retries < MAX_TCP_SYNCNT))
+			tcp_retransmit_timer(sk);
 		break;
 	case ICSK_TIME_PROBE0:
 		tcp_probe_timer(sk);

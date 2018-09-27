@@ -304,6 +304,12 @@ ipt_do_table(struct sk_buff *skb,
 	struct xt_action_param acpar;
 	unsigned int addend;
 
+#ifdef CONFIG_CORTINA_GKCI
+	/* debug_Amos on 2012/08/27 for turn on/off netfilter dynamically */
+	if (!nf_ct_generic_enabled)
+		return NF_ACCEPT;
+#endif
+
 	/* Initialization */
 	ip = ip_hdr(skb);
 	indev = in ? in->name : nulldevname;

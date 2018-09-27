@@ -49,6 +49,13 @@ struct tc_police_compat {
 
 /* Each policer is serialized by its individual spinlock */
 
+#ifdef CONFIG_CS752X_HW_ACCELERATION
+extern void cs_qos_set_skb_pol_id(struct sk_buff *skb, u8 pol_id);
+extern void cs_qos_enbl_filter_policer(u8 *p_pol_id, u32 cir, u32 cbs, u32 pir, u32 pbs);
+extern void cs_qos_dsbl_filter_policer(u8 pol_id);
+extern void cs_qos_set_skb_sw_only(struct sk_buff *skb);
+#endif
+
 static int tcf_act_police_walker(struct sk_buff *skb, struct netlink_callback *cb,
 			      int type, struct tc_action *a)
 {
@@ -177,6 +184,9 @@ static int tcf_act_police_locate(struct nlattr *nla, struct nlattr *est,
 		return -ENOMEM;
 	ret = ACT_P_CREATED;
 	police->tcf_refcnt = 1;
+#ifdef CONFIG_CS752X_HW_ACCELERATION
+	police->hw_pol_id = 0;
+#endif
 	spin_lock_init(&police->tcf_lock);
 	if (bind)
 		police->tcf_bindcnt = 1;
@@ -240,6 +250,74 @@ override:
 	if (ret != ACT_P_CREATED)
 		return ret;
 
+#ifdef CONFIG_CS752X_HW_ACCELERATION
+#define TIME_UNITS_PER_SEC	1000000
+	if (police->hw_pol_id != 0) {
+		/* if HW policer has already been created and enabled for this SW 
+		 * Policer */
+		u32 cbs = 0, cir = 0, pbs = 0, pir = 0;
+		u32 temp_a, temp_b;
+
+		/* check if the updated SW policer can be applied to HW policer */
+		if ((police->tcfp_ewma_rate == 0) && (police->tcfp_R_tab != NULL) && 
+				(police->tcf_action == TC_ACT_SHOT)) {
+			/* update the HW policer */
+			cir = parm->rate.rate << 3;
+			temp_a = police->tcfp_burst / TIME_UNITS_PER_SEC;
+			temp_b = cir / TIME_UNITS_PER_SEC;
+			if ((temp_a == 0) && (temp_b == 0))
+				cbs = (police->tcfp_burst * cir) / TIME_UNITS_PER_SEC;
+			else if (temp_a > temp_b)
+				cbs = temp_a * cir;
+			else
+				cbs = temp_b * police->tcfp_burst;
+
+			if (police->tcfp_P_tab != NULL) {
+				pir = parm->peakrate.rate << 3;
+				temp_a = L2T_P(police, police->tcfp_mtu);
+				if (temp_a > TIME_UNITS_PER_SEC)
+					pbs = temp_a / TIME_UNITS_PER_SEC * pir;
+				else
+					pbs = temp_a * pir / TIME_UNITS_PER_SEC;
+			}
+			cs_qos_enbl_filter_policer(&police->hw_pol_id, cir, 
+					cbs, pir, pbs);
+		} else {
+			/* disable the HW policer */
+			cs_qos_dsbl_filter_policer(police->hw_pol_id);
+			police->hw_pol_id = 0;
+		}
+	} else {
+		/* a new HW policer, check if this can be applied to HW policer */
+		u32 cbs = 0, cir = 0, pbs = 0, pir = 0;
+		u32 temp_a, temp_b;
+
+		if ((police->tcfp_ewma_rate == 0) && (police->tcfp_R_tab != NULL) && 
+				(police->tcf_action == TC_ACT_SHOT)) {
+			/* create the HW policer */
+			cir = parm->rate.rate << 3;
+			temp_a = police->tcfp_burst / TIME_UNITS_PER_SEC;
+			temp_b = cir / TIME_UNITS_PER_SEC;
+			if ((temp_a == 0) && (temp_b == 0))
+				cbs = (police->tcfp_burst * cir) / TIME_UNITS_PER_SEC;
+			else if (temp_a > temp_b)
+				cbs = temp_a * cir;
+			else
+				cbs = temp_b * police->tcfp_burst;
+
+			if (police->tcfp_P_tab != NULL) {
+				pir = parm->peakrate.rate << 3;
+				temp_a = L2T_P(police, police->tcfp_mtu);
+				if (temp_a > TIME_UNITS_PER_SEC)
+					pbs = temp_a / TIME_UNITS_PER_SEC * pir;
+				else
+					pbs = temp_a * (pir / TIME_UNITS_PER_SEC);
+			}
+			cs_qos_enbl_filter_policer(&police->hw_pol_id, cir, cbs, 
+					pir, pbs);
+		}
+	}
+#endif
 	police->tcfp_t_c = psched_get_time();
 	police->tcf_index = parm->index ? parm->index :
 		tcf_hash_new_index(&police_idx_gen, &police_hash_info);
@@ -276,6 +354,12 @@ static int tcf_act_police_cleanup(struct tc_action *a, int bind)
 		p->tcf_refcnt--;
 		if (p->tcf_refcnt <= 0 && !p->tcf_bindcnt) {
 			tcf_police_destroy(p);
+#ifdef CONFIG_CS752X_HW_ACCELERATION
+			if (p->hw_pol_id != 0) {
+				cs_qos_dsbl_filter_policer(p->hw_pol_id);
+				p->hw_pol_id = 0;
+			}
+#endif
 			ret = 1;
 		}
 	}
@@ -293,6 +377,12 @@ static int tcf_act_police(struct sk_buff *skb, const struct tc_action *a,
 	spin_lock(&police->tcf_lock);
 
 	bstats_update(&police->tcf_bstats, skb);
+
+#ifdef CONFIG_CS752X_HW_ACCELERATION
+	if (police->hw_pol_id != 0)
+		cs_qos_set_skb_pol_id(skb, police->hw_pol_id);
+	else cs_qos_set_skb_sw_only(skb);
+#endif
 
 	if (police->tcfp_ewma_rate &&
 	    police->tcf_rate_est.bps >= police->tcfp_ewma_rate) {

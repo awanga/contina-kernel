@@ -18,6 +18,10 @@
 
 #include <trace/events/irq.h>
 
+#ifdef CONFIG_ARCH_GOLDENGATE /* G2 GPIO Hierarchical Interrupt Support */
+#include <mach/irqs-eb.h>
+#endif /* CONFIG_ARCH_GOLDENGATE */
+
 #include "internals.h"
 
 /**
@@ -44,6 +48,12 @@ int irq_set_chip(unsigned int irq, struct irq_chip *chip)
 	 * already marked, and this call is harmless.
 	 */
 	irq_reserve_irq(irq);
+
+#ifdef CONFIG_ARCH_GOLDENGATE /* G2 GPIO Hierarchical Interrupt Support */
+       if (up_irq_is_exist(irq))
+               irq_set_chip_data(irq, irq_to_desc(get_up_irq(irq)));
+#endif /* CONFIG_ARCH_GOLDENGATE */
+
 	return 0;
 }
 EXPORT_SYMBOL(irq_set_chip);

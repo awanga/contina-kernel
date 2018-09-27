@@ -247,6 +247,47 @@ config MSND_FIFOSIZE
 	  and Pinnacle). Larger values reduce the chance of data overruns at
 	  the expense of overall latency. If unsure, use the default.
 
+config SOUND_CS75XX_SPDIF
+	tristate "CS75XX SPDIF"
+	depends on SOUND_PRIME!=n && SOUND!=n && ARCH_GOLDENGATE
+	help
+	  Answer Y if you have Cortina CS75XX SPDIF module support.
+	  
+config DAC_REF_INTERNAL_CLK
+	bool "internal clock generator"	  
+	depends on SOUND_CS75XX_SPDIF
+	help
+	  Configure CS75XX SPDIF module to be a clock generator	
+
+config SOUND_DAC_SSP
+	tristate "DAC with CS75XX SSP"
+	depends on SOUND_PRIME!=n && SOUND!=n && ARCH_GOLDENGATE && CORTINA_FPGA
+	select CS75XX_SSP
+	help
+	  Answer Y if you have DAC with with Cortina CS75XX SSP(I2S) module
+	  support.
+
+config SOUND_D2_45057
+	tristate "D2-45057"
+	depends on SOUND_PRIME!=n && SOUND!=n && ARCH_GOLDENGATE
+	help
+	  Answer Y if you have D2-45057 with with Cortina CS75XX SPDIF module
+	  support.
+
+choice
+	prompt "D2-45057 Data Path Selection"
+	default SOUND_D2_45057_SPDIF
+	depends on SOUND_D2_45057
+	help
+	  Select D2-45057 data path.
+
+	config SOUND_D2_45057_SPDIF
+		bool "CS75XX-SPDIF"
+
+	config SOUND_D2_45057_SSP
+		bool "CS75XX-SSP"
+endchoice
+
 menuconfig SOUND_OSS
 	tristate "OSS sound modules"
 	depends on ISA_DMA_API && VIRT_TO_BUS

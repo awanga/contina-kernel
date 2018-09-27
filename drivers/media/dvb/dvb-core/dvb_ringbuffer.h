@@ -30,6 +30,10 @@
 #include <linux/spinlock.h>
 #include <linux/wait.h>
 
+#ifdef CONFIG_ARCH_GOLDENGATE
+#define	G2_NO_ZERO_COPY		1
+#endif /* CONFIG_ARCH_GOLDENGATE */
+
 struct dvb_ringbuffer {
 	u8               *data;
 	ssize_t           size;
@@ -37,6 +41,10 @@ struct dvb_ringbuffer {
 	ssize_t           pwrite;
 	int               error;
 
+#if defined(CONFIG_DVB_CS75XX_TS) || defined(CONFIG_DVB_CS75XX_TS_MODULE)
+	unsigned char     qid;  /* Amos: RXQ ID (0-12) */
+	unsigned char     type; /* Amos: 0-data 1-control */
+#endif
 	wait_queue_head_t queue;
 	spinlock_t        lock;
 };

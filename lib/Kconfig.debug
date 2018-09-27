@@ -317,6 +317,15 @@ config TIMER_STATS
 	  (it defaults to deactivated on bootup and will only be activated
 	  if some application like powertop activates it explicitly).
 
+config CS752X_PROC
+    bool "Cortina CS752X PROC debugging support"
+	default y
+    depends on ARCH_GOLDENGATE && PRINTK && PROC_FS
+    help
+      Allow users to control CS752X debug flags and other variables 
+      from proc filesystems.
+      They are allocated in /proc/drivers/cs752x/*.
+
 config DEBUG_OBJECTS
 	bool "Debug object operations"
 	depends on DEBUG_KERNEL

@@ -40,6 +40,17 @@
 #include "vlan.h"
 #include "vlanproc.h"
 
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+#include <mach/cs_kernel_hook_api.h>
+#endif
+
+#ifdef CONFIG_CS752X_ACCEL_KERNEL
+
+extern void k_jt_cs_vlan_ioctl_handler_add_vlan(struct net_device *real_dev, u16 vlan_id);
+extern void k_jt_cs_vlan_ioctl_handler_del_vlan(struct net_device *dev);
+
+#endif
+
 #define DRV_VERSION "1.8"
 
 /* Global VLAN variables */
@@ -574,14 +585,31 @@ static int vlan_ioctl_handler(struct net *net, void __user *arg)
 		if (!capable(CAP_NET_ADMIN))
 			break;
 		err = register_vlan_device(dev, args.u.VID);
+#ifdef CONFIG_CS752X_ACCEL_KERNEL
+		if (err == 0) {			
+			k_jt_cs_vlan_ioctl_handler_add_vlan(dev, args.u.VID);
+		}
+#endif
 		break;
 
 	case DEL_VLAN_CMD:
 		err = -EPERM;
 		if (!capable(CAP_NET_ADMIN))
 			break;
+#ifdef CONFIG_CS752X_ACCEL_KERNEL
+		{
+			k_jt_cs_vlan_ioctl_handler_del_vlan(dev);
+		}
+#endif
 		unregister_vlan_dev(dev, NULL);
 		err = 0;
+
+#ifdef CONFIG_LYNXE_KERNEL_HOOK 
+		if (cs_kernel_hook_ops.kho_l3_intf_delete != NULL) {
+			cs_kernel_hook_ops.kho_l3_intf_delete(0, __CS_IPV4, dev->ifindex);
+			cs_kernel_hook_ops.kho_l3_intf_delete(0, __CS_IPV6, dev->ifindex);
+		}
+#endif
 		break;
 
 	case GET_VLAN_REALDEV_NAME_CMD:

@@ -54,6 +54,13 @@
 #include <net/net_namespace.h>
 #include <net/netns/generic.h>
 
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+#include <linux/inetdevice.h>
+#include <linux/if_pppox.h>
+#include <linux/if_vlan.h>
+#include <mach/cs_kernel_hook_api.h>
+#endif
+
 #define PPP_VERSION	"2.4.2"
 
 /*
@@ -270,6 +277,10 @@ static int unit_get(struct idr *p, void *ptr);
 static int unit_set(struct idr *p, void *ptr, int n);
 static void unit_put(struct idr *p, int n);
 static void *unit_find(struct idr *p, int n);
+
+#ifdef CONFIG_CS752X_ACCEL_KERNEL
+extern void cs_pppoe_del_hash_hook(char *pppoe_dev_name);
+#endif
 
 static struct class *ppp_class;
 
@@ -2717,6 +2728,11 @@ static void ppp_shutdown_interface(struct ppp *ppp)
 	if (!ppp->closing) {
 		ppp->closing = 1;
 		ppp_unlock(ppp);
+
+#ifdef CONFIG_CS752X_ACCEL_KERNEL
+		cs_pppoe_del_hash_hook(ppp->dev);
+#endif
+
 		unregister_netdev(ppp->dev);
 		unit_put(&pn->units_idr, ppp->file.index);
 	} else
@@ -2764,6 +2780,11 @@ static void ppp_destroy_interface(struct ppp *ppp)
 #endif /* CONFIG_PPP_FILTER */
 
 	kfree_skb(ppp->xmit_pending);
+
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+	if (cs_kernel_hook_ops.kho_pppoe_delete != NULL)
+		cs_kernel_hook_ops.kho_pppoe_delete(0, ppp->dev->ifindex);
+#endif
 
 	free_netdev(ppp->dev);
 }
@@ -2816,6 +2837,11 @@ ppp_connect_channel(struct channel *pch, int unit)
 	struct ppp_net *pn;
 	int ret = -ENXIO;
 	int hdrlen;
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+	struct sock *sk = (struct sock *) pch->chan->private;
+	struct pppox_sock *po = pppox_sk(sk);
+	struct net_device *eth_dev = po->pppoe_dev;
+#endif
 
 	pn = ppp_pernet(pch->chan_net);
 
@@ -2840,6 +2866,11 @@ ppp_connect_channel(struct channel *pch, int unit)
 	atomic_inc(&ppp->file.refcnt);
 	ppp_unlock(ppp);
 	ret = 0;
+
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+	if (cs_kernel_hook_ops.kho_pppoe_add)
+		cs_kernel_hook_ops.kho_pppoe_add(0, ppp->dev, eth_dev, po);
+#endif
 
  outl:
 	write_unlock_bh(&pch->upl);

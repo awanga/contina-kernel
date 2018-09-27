@@ -192,6 +192,11 @@ static int xhci_pci_probe(struct pci_dev *dev, const struct pci_device_id *id)
 	 */
 	retval = usb_hcd_pci_probe(dev, id);
 
+#ifdef CONFIG_ARCH_GOLDENGATE
+	/* debug_Aaron on 04/11/2011, for G2 FPGA board */
+	pcie_set_readrq(dev, 512);
+#endif /* CONFIG_ARCH_GOLDENGATE */
+
 	if (retval)
 		return retval;
 

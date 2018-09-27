@@ -93,6 +93,12 @@
 #include <net/inet_common.h>
 #endif
 
+#ifdef CONFIG_CS752X_ACCEL_KERNEL
+#include <linux/if_pppox.h>
+extern void cs_pppoe_skb_recv_hook(struct sk_buff *skb, u16 pppoe_session_id, u8 direction);
+extern void cs_pppoe_skb_xmit_hook(struct sk_buff *skb, u16 pppoe_session_id, u8 direction);
+#endif
+
 /*
    Assumptions:
    - if device has no dev->hard_header routine, it adds and removes ll header
@@ -2362,6 +2368,24 @@ static int packet_snd(struct socket *sock,
 	skb->priority = sk->sk_priority;
 	skb->mark = sk->sk_mark;
 
+#ifdef CONFIG_CS752X_ACCEL_KERNEL
+	/* LAN to WAN case */
+	{
+		struct pppoe_hdr *ph;
+
+		if (skb->network_header) {
+			if (skb->protocol == htons(ETH_P_PPP_SES)) {
+				ph = pppoe_hdr(skb);
+				cs_pppoe_skb_xmit_hook(skb, ph->sid, 0); //0: DIR_LAN2WAN
+			}
+			//else {
+				//printk("Warning(%s, %d): NOT ETH_P_PPP_SES\n",
+				//		__func__, __LINE__);
+			//} /* if (skb->protocol == htons(ETH_P_PPP_SES)) */
+		} /* if (skb->network_header) */
+	}
+#endif /* CONFIG_CS752X_ACCEL_KERNEL */
+
 	if (po->has_vnet_hdr) {
 		if (vnet_hdr.flags & VIRTIO_NET_HDR_F_NEEDS_CSUM) {
 			if (!skb_partial_csum_set(skb, vnet_hdr.csum_start,
@@ -2791,6 +2815,23 @@ static int packet_recvmsg(struct kiocb *iocb, struct socket *sock,
 	 * a user program they can ask the device for its MTU
 	 * anyway.
 	 */
+
+#ifdef CONFIG_CS752X_ACCEL_KERNEL
+	/* WAN to LAN case */
+	{
+		struct pppoe_hdr *ph;
+
+		if (skb->protocol == htons(ETH_P_PPP_SES)) {
+			ph = pppoe_hdr(skb);
+			cs_pppoe_skb_recv_hook(skb, ph->sid, 1); //1: DIR_WAN2LAN
+		}
+		//else {
+			//printk("Warning(%s, %d): NOT ETH_P_PPP_SES\n",
+			//		__FUNCTION__, __LINE__);
+		//} /* if (skb->protocol == htons(ETH_P_PPP_SES)) */
+	}
+#endif /* CONFIG_CS752X_ACCEL_KERNEL */
+
 	copied = skb->len;
 	if (copied > len) {
 		copied = len;

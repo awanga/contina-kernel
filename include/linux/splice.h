@@ -20,6 +20,9 @@
 #define SPLICE_F_MORE	(0x04)	/* expect more data */
 #define SPLICE_F_GIFT	(0x08)	/* pages passed in are a gift */
 
+#ifdef CONFIG_VFS_FASTPATH
+#define SPLICE_F_G2_FASTPATH (0x10) /* use Cortina G2 fast path */
+#endif
 /*
  * Passed to the actors
  */

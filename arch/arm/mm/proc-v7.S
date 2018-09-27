@@ -168,9 +168,41 @@ __v7_ca15mp_setup:
 	orreq	r0, r0, #(1 << 6)		@ Enable SMP/nAMP mode
 	orreq	r0, r0, r10			@ Enable CPU-specific SMP bits
 	mcreq	p15, 0, r0, c1, c0, 1
+#else /* CONFIG_SMP */
+#ifdef CONFIG_ARCH_GOLDENGATE
+	/* added by hkou & ted 02/23/2012 */
+	mrc p15, 0, r0, c1, c0, 1
+	orreq	r0, r0, #(1 << 1)				@ Enable L2 Prefetch hint for UP mode
+	mcreq	p15, 0, r0, c1, c0, 1
+#endif /* CONFIG_ARCH_GOLDENGATE */
 #endif
 __v7_setup:
+#ifndef CONFIG_ARCH_GOLDENGATE
 	adr	r12, __v7_setup_stack		@ the local stack
+#else /* CONFIG_ARCH_GOLDENGATE */
+#ifdef CONFIG_SMP
+	mrc p15, 0, r0, c1, c0, 1
+	tst r0, #(1 << 6)     @ SMP/nAMP mode enabled?
+	orreq r0, r0, #(1 << 6) | (1 << 0)  @ Enable SMP/nAMP mode and
+	mcreq p15, 0, r0, c1, c0, 1   @ TLB ops broadcasting
+#else /* CONFIG_SMP */
+	/* added by hkou & ted 02/23/2012 */
+	mrc p15, 0, r0, c1, c0, 1
+	orreq	r0, r0, #(1 << 1)				@ Enable L2 Prefetch hint for UP mode
+	mcreq	p15, 0, r0, c1, c0, 1
+#endif /* CONFIG_SMP */
+	adr	r12, __v7_setup_stack		@ the local stack
+#ifdef CONFIG_SMP
+  mrc p15, 0, r0, c0, c0, 0   @ read main ID register
+  ands  r0, r0, #0x03
+  beq skip_DC_invalid
+  stmia r12, {r0-r5, r7, r9, r11, lr}
+  bl  v7_invalidate_dcache_all
+  ldmia r12, {r0-r5, r7, r9, r11, lr}
+
+skip_DC_invalid:
+#endif /* CONFIG_SMP */
+#endif /* CONFIG_ARCH_GOLDENGATE */
 	stmia	r12, {r0-r5, r7, r9, r11, lr}
 	bl	v7_flush_dcache_all
 	ldmia	r12, {r0-r5, r7, r9, r11, lr}
@@ -180,7 +212,14 @@ __v7_setup:
 	teq	r10, #0x41000000
 	bne	3f
 	and	r5, r0, #0x00f00000		@ variant
+
+#ifndef CONFIG_ARCH_GOLDENGATE
 	and	r6, r0, #0x0000000f		@ revision
+#else /* CONFIG_ARCH_GOLDENGATE */
+	/* modified by hkou 02/22/2012 */
+	ldr	r6, =0x00000007			@ revision fix - G2 is R2P7
+#endif /* CONFIG_ARCH_GOLDENGATE */
+
 	orr	r6, r6, r5, lsr #20-4		@ combine variant and revision
 	ubfx	r0, r0, #4, #12			@ primary part number
 
@@ -243,6 +282,16 @@ __v7_setup:
 	mcrlt	p15, 0, r10, c15, c0, 1		@ write diagnostic register
 1:
 #endif
+#ifdef CONFIG_ARM_ERRATA_761320
+	mrceq	p15, 0, r10, c15, c0, 1		@ read diagnostic register
+	and	r10, r10, #0xc00000
+	teq	r0, #0
+	bne	761320f
+	mrc	p15, 0, r10, c15, c0, 1		@ read diagnostic register
+	orr	r10, r10, #1 << 21		@ set bit #21
+	mcr	p15, 0, r10, c15, c0, 1		@ write diagnostic register
+761320:
+#endif /* CONFIG_ARM_ERRATA_761320 */
 
 3:	mov	r10, #0
 	mcr	p15, 0, r10, c7, c5, 0		@ I+BTB cache invalidate

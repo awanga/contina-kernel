@@ -448,6 +448,9 @@ extern char *softirq_to_name[NR_SOFTIRQS];
 struct softirq_action
 {
 	void	(*action)(struct softirq_action *);
+#ifdef CONFIG_SMB_TUNING
+	int   max_restart;
+#endif
 };
 
 asmlinkage void do_softirq(void);

@@ -70,7 +70,9 @@
 #define DRIVER_AUTHOR "David Brownell"
 #define DRIVER_DESC "USB 2.0 'Enhanced' Host Controller (EHCI) Driver"
 
+#ifndef CONFIG_CORTINA_G2_USB_HOST
 static const char	hcd_name [] = "ehci_hcd";
+#endif
 
 
 #undef VERBOSE_DEBUG
@@ -122,6 +124,9 @@ MODULE_PARM_DESC(hird, "host initiated resume duration, +1 for each 75us");
 
 #define	INTR_MASK (STS_IAA | STS_FATAL | STS_PCD | STS_ERR | STS_INT)
 
+#ifdef CONFIG_ARCH_GOLDENGATE
+extern unsigned int cs_usb_host_debug;
+#endif /* CONFIG_ARCH_GOLDENGATE */
 /*-------------------------------------------------------------------------*/
 
 #include "ehci.h"
@@ -290,6 +295,9 @@ static int handshake_on_error_set_halt(struct ehci_hcd *ehci, void __iomem *ptr,
 		ehci->rh_state = EHCI_RH_HALTED;
 		ehci_err(ehci, "force halt; handshake %p %08x %08x -> %d\n",
 			ptr, mask, done, error);
+#ifdef CONFIG_ARCH_GOLDENGATE
+		cs_usb_host_debug = 1;
+#endif /* CONFIG_ARCH_GOLDENGATE */
 	}
 
 	return error;
@@ -867,7 +875,11 @@ static irqreturn_t ehci_irq (struct usb_hcd *hcd)
 	masked_status = status & (INTR_MASK | STS_FLR);
 
 	/* Shared IRQ? */
+#ifndef CONFIG_ARCH_GOLDENGATE
 	if (!masked_status || unlikely(ehci->rh_state == EHCI_RH_HALTED)) {
+#else /* CONFIG_ARCH_GOLDENGATE */
+	if (!masked_status) {
+#endif /* CONFIG_ARCH_GOLDENGATE */
 		spin_unlock(&ehci->lock);
 		return IRQ_NONE;
 	}
@@ -968,9 +980,16 @@ dead:
 		 * uses ehci_stop to clean up the rest
 		 */
 		bh = 1;
+#ifdef CONFIG_ARCH_GOLDENGATE
+		cs_usb_host_debug = 1;
+#endif /* CONFIG_ARCH_GOLDENGATE */
 	}
 
+#ifndef CONFIG_ARCH_GOLDENGATE
 	if (bh)
+#else /* CONFIG_ARCH_GOLDENGATE */
+	if (bh && likely(ehci->rh_state == EHCI_RH_RUNNING))
+#endif /* CONFIG_ARCH_GOLDENGATE */
 		ehci_work (ehci);
 	spin_unlock (&ehci->lock);
 	if (pcd_status)
@@ -1255,9 +1274,12 @@ MODULE_DESCRIPTION(DRIVER_DESC);
 MODULE_AUTHOR (DRIVER_AUTHOR);
 MODULE_LICENSE ("GPL");
 
+/*Stone Add*/
+#ifndef CONFIG_CORTINA_G2_USB_HOST
 #ifdef CONFIG_PCI
 #include "ehci-pci.c"
 #define	PCI_DRIVER		ehci_pci_driver
+#endif
 #endif
 
 #ifdef CONFIG_USB_EHCI_FSL
@@ -1309,6 +1331,11 @@ MODULE_LICENSE ("GPL");
 #include "ehci-ixp4xx.c"
 #define	PLATFORM_DRIVER		ixp4xx_ehci_driver
 #endif
+
+#ifdef CONFIG_CORTINA_G2_USB_HOST
+#include "ehci-cs752x.c"
+#define	PLATFORM_DRIVER		cs752x_ehci_driver
+#endif /* CONFIG_CORTINA_G2_USB_HOST */
 
 #ifdef CONFIG_USB_W90X900_EHCI
 #include "ehci-w90x900.c"

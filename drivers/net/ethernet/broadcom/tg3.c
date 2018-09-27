@@ -7811,6 +7811,12 @@ static void tg3_restore_pci_state(struct tg3 *tp)
 		pci_write_config_byte(tp->pdev, PCI_LATENCY_TIMER,
 				      tp->pci_lat_timer);
 	}
+#ifdef CONFIG_CORTINA_GKCI
+	else {
+		//debug_Aaron
+		pcie_set_readrq(tp->pdev, 512);
+	}
+#endif
 
 	/* Make sure PCI-X relaxed ordering bit is clear. */
 	if (tg3_flag(tp, PCIX_MODE)) {
@@ -7993,6 +7999,11 @@ static int tg3_chip_reset(struct tg3 *tp)
 		pci_write_config_word(tp->pdev,
 				      pci_pcie_cap(tp->pdev) + PCI_EXP_DEVCTL,
 				      val16);
+
+#ifdef CONFIG_CORTINA_GKCI
+		//debug_Aaron
+		pcie_set_readrq(tp->pdev, 512);
+#endif
 
 		/* Clear error status */
 		pci_write_config_word(tp->pdev,
@@ -14367,6 +14378,11 @@ static int __devinit tg3_get_invariants(struct tg3 *tp)
 		u16 lnkctl;
 
 		tg3_flag_set(tp, PCI_EXPRESS);
+
+#ifdef CONFIG_CORTINA_GKCI
+		//debug_Aaron
+		pcie_set_readrq(tp->pdev, 512);
+#endif
 
 		pci_read_config_word(tp->pdev,
 				     pci_pcie_cap(tp->pdev) + PCI_EXP_LNKCTL,

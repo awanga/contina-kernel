@@ -466,6 +466,9 @@ struct usb_gadget_ops {
 	int	(*pullup) (struct usb_gadget *, int is_on);
 	int	(*ioctl)(struct usb_gadget *,
 				unsigned code, unsigned long param);
+#ifdef CONFIG_USB_GADGET_SNPS_DWC_OTG
+	int	(*lpm_support) (struct usb_gadget *);
+#endif
 	void	(*get_config_params)(struct usb_dcd_config_params *);
 	int	(*udc_start)(struct usb_gadget *,
 			struct usb_gadget_driver *);

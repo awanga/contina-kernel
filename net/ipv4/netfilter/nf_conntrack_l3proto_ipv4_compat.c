@@ -22,6 +22,9 @@
 #include <net/netfilter/nf_conntrack_acct.h>
 #include <linux/rculist_nulls.h>
 #include <linux/export.h>
+#ifdef CONFIG_CS752X_ACCEL_KERNEL
+extern void cs_hw_accel_forward_update_ct_timeout(struct nf_conn *ct);
+#endif
 
 struct ct_iter_state {
 	struct seq_net_private p;
@@ -140,6 +143,10 @@ static int ct_seq_show(struct seq_file *s, void *v)
 	NF_CT_ASSERT(l4proto);
 
 	ret = -ENOSPC;
+#ifdef CONFIG_CS752X_ACCEL_KERNEL
+	cs_hw_accel_forward_update_ct_timeout(ct);
+#endif
+
 	if (seq_printf(s, "%-8s %u %ld ",
 		      l4proto->name, nf_ct_protonum(ct),
 		      timer_pending(&ct->timeout)

@@ -1,0 +1,87 @@
+==== Introduction ====
+Everything under this FE folder covers most of the control and management 
+aspect of CS752x's NetEngine Forwarding Engine module.
+
+==== Folders and Contents ====
+    core: This folder contains implementations for the system required FE 
+          initiailizations, some helper APIs for certain table management, 
+          such as hash, L2 MAC, L3 IP, and etc.
+    include:  All the FE related header files are in this folder.
+    table: Implementation of all the table resource managements are in this 
+           folder.  We also have HW table access under this folder, too.  
+           These table managements keep software copy of the table itself 
+           and read/write to the hardware tables.
+
+==== Sample Usage ====
+A quick example by using VOQ POLICER table:
+1) when user wants to insert an entry to the VOQPOL table, all he needs to 
+   do is the following:
+    {
+        fe_voq_pol_entry_t voqpol_entry;
+        unsigned int voqpol_idx;
+        int ret;
+        [. . . .]
+        memset(&voqpol_entry, 0x0, sizeof(voqpol_entry));
+        voqpol_entry.voq_base = 20;
+        voqpol_entry.pol_base = 23;
+        ret = cs_fe_table_add_entry(FE_TABLE_VOQ_POLICER, &voqpol_entry, 
+                &voqpol_idx);
+        if (ret != 0) return ret;
+        /* ret == 0, when adding entry succeeds.  If fails, will return other 
+         * value.
+         * If succeeds, the index to the entry that has been inserted will 
+         * be stored in voqpol_idx. */
+        [. . . .]
+    }
+This cs_fe_table_add_entry() API will check if there is a matching entry in 
+the table yet.  If there is, it will just increase the reference count of 
+that specific entry and return the matching index.  If there is not, it will 
+allocate a new spot in the table, insert it, and increase the reference count.
+
+2) For deleting, the user can do it with 2 different ways:
+    cs_fe_table_del_entry_by_idx(table_type_id, index, force_flag)
+    or 
+    cs_fe_table_del_entry_by(table_type_id, *entry, force_flag)
+The first one deletes by using the index.  The second one deletes by finding 
+a matching entry and then deletes it.  It will first decrement the reference 
+count to the specific entry.  If the reference count becomes 0, it will then 
+remove the entry from the table.
+
+All the APIs that user of the FE tables are all in include/cs_fe_table.h, such 
+as cs_fe_table_add_entry(), cs_fe_table_del_entry_by_idx(), and etc.  The table 
+ID is defined in include/cs_fe_head_table.h, look for "cs_fe_hw_table_e", and 
+the entry data structures are defined in 
+arch/arm/mach-goldengate/include/mach/cs75xx_fe_core_table.h.
+
+==== FE Table Design Topology ====
+To save the memory usage that can possibly be allocated, because of the numbers 
+of the table and the numbers of the entry per table.  If we statically allocate 
+array of entry data structure for all the table, it will take several MB of 
+memory off system.  Therefore, instead of allocating array based on the entry 
+data structure, we allocate array of pointer.  We only allocate the memory for 
+a data entry if and only if they exist and are used in the table.  By doing so, 
+this will make our SW FE Table looks like the following:
+
+  Statically allocated
+     Pointer Array
+   (cs_table_entry_t)       fe_table_entry_t        fe_xxx_entry_t (different 
+    ---------------       --------------------      -------------   for each 
+    | 0)      data| --->  |refcnt  &  p_entry| ---> |           |   table type)
+    ---------------       --------------------      -------------
+    | 1)          | ---> NULL
+    ---------------
+        . . . . . 
+    ---------------
+    | n-2)        | ---> NULL
+    ---------------
+    | n-1)        | ---> NULL
+    ---------------
+
+The first layer of array keeps the information of whether a entry in a table 
+has been used or not.  The second layer keeps the referenced count and pointer 
+to the real data structure of this entry.  Most of the generic table management 
+can be done by managing the first 2 layers of the table.  The third layer is 
+table-specific and if user is accessing the content of a specific entry, then 
+the generic table management API will not be able to handle it.  Each table has 
+to deal with those by itself.
+

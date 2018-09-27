@@ -119,6 +119,12 @@
 #include <linux/mroute.h>
 #endif
 
+#ifdef CONFIG_VFS_FASTPATH
+/* G2 fast path implementation */
+extern int tcp_sendpages(struct sock *sk, struct pipe_inode_info *pipe, int offset,
+		 size_t size, int flags);
+#endif
+
 
 /* The inetsw table contains everything that inet_create needs to
  * build a new socket.
@@ -769,6 +775,26 @@ ssize_t inet_sendpage(struct socket *sock, struct page *page, int offset,
 	return sock_no_sendpage(sock, page, offset, size, flags);
 }
 EXPORT_SYMBOL(inet_sendpage);
+#ifdef CONFIG_VFS_FASTPATH
+/* G2 fast path implementation */
+ssize_t inet_sendpages(struct socket *sock, struct pipe_inode_info *pipe, int offset,
+		      size_t size, int flags)
+{
+	struct sock *sk = sock->sk;
+
+	sock_rps_record_flow(sk);
+
+	/* We may need to bind the socket. */
+	if (!inet_sk(sk)->inet_num && !sk->sk_prot->no_autobind &&
+	    inet_autobind(sk))
+		return -EAGAIN;
+
+	return tcp_sendpages(sk, pipe, offset, size, flags);
+}
+EXPORT_SYMBOL(inet_sendpages);
+
+/* end */
+#endif
 
 int inet_recvmsg(struct kiocb *iocb, struct socket *sock, struct msghdr *msg,
 		 size_t size, int flags)

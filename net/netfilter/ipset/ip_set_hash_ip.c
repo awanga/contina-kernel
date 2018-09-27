@@ -198,6 +198,15 @@ hash_ip4_uadt(struct ip_set *set, struct nlattr *tb[],
 		else
 			ret = 0;
 	}
+	if (ip_set_modified != NULL && (adt == IPSET_ADD || adt == IPSET_DEL)) {
+		struct net *net;
+		__be32 nip_to = htonl(ip_to);
+		rcu_read_lock();
+		for_each_net_rcu(net) {
+			ip_set_modified(net, NFPROTO_IPV4, &nip, &nip_to);
+		}
+		rcu_read_unlock();
+	}
 	return ret;
 }
 
@@ -354,7 +363,23 @@ hash_ip6_uadt(struct ip_set *set, struct nlattr *tb[],
 
 	ret = adtfn(set, &ip, timeout, flags);
 
-	return ip_set_eexist(ret, flags) ? 0 : ret;
+	if (ip_set_eexist(ret, flags))
+		ret = 0;
+	if (ip_set_modified != NULL && (adt == IPSET_ADD || adt == IPSET_DEL)) {
+		struct net *net;
+		union nf_inet_addr ip_to;
+		memcpy(&ip_to, &ip, sizeof(struct in6_addr));
+		ip_to.ip6[0] |= ~ip_set_netmask6(h->netmask)[0];
+		ip_to.ip6[1] |= ~ip_set_netmask6(h->netmask)[1];
+		ip_to.ip6[2] |= ~ip_set_netmask6(h->netmask)[2];
+		ip_to.ip6[3] |= ~ip_set_netmask6(h->netmask)[3];
+		rcu_read_lock();
+		for_each_net_rcu(net) {
+			ip_set_modified(net, NFPROTO_IPV6, &ip.in6, &ip_to.in6);
+		}
+		rcu_read_unlock();
+	}
+	return ret;
 }
 
 /* Create hash:ip type of sets */

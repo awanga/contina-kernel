@@ -35,6 +35,9 @@
 
 #include "mm.h"
 
+extern int ram_panic_pages;
+extern void *ram_panic_mem;
+
 static unsigned long phys_initrd_start __initdata = 0;
 static unsigned long phys_initrd_size __initdata = 0;
 
@@ -158,6 +161,9 @@ static void __init arm_bootmem_init(unsigned long start_pfn,
 	unsigned int boot_pages;
 	phys_addr_t bitmap;
 	pg_data_t *pgdat;
+#ifdef CONFIG_ARCH_GOLDENGATE
+	int res;
+#endif /* CONFIG_ARCH_GOLDENGATE */
 
 	/*
 	 * Allocate the bootmem bitmap page.  This must be in a region
@@ -201,6 +207,16 @@ static void __init arm_bootmem_init(unsigned long start_pfn,
 		reserve_bootmem(__pfn_to_phys(start),
 			        (end - start) << PAGE_SHIFT, BOOTMEM_DEFAULT);
 	}
+#ifdef CONFIG_ARCH_GOLDENGATE
+//#ifdef CONFIG_G2_IPC2RCPU
+	/* Reserve share memory for IPC */
+	res = reserve_bootmem_node(NODE_DATA(0),GOLDENGATE_IPC_BASE - 0x500000 ,
+				GOLDENGATE_IPC_MEM_SIZE + 0x500000, BOOTMEM_EXCLUSIVE);
+	if(res!=0)
+		printk(KERN_ERR
+			"Overlap in-use of IPC memory region\n");
+//#endif
+#endif /* CONFIG_ARCH_GOLDENGATE */
 }
 
 #ifdef CONFIG_ZONE_DMA
@@ -359,6 +375,18 @@ void __init arm_memblock_init(struct meminfo *mi, struct machine_desc *mdesc)
 		initrd_end = initrd_start + phys_initrd_size;
 	}
 #endif
+	if (ram_panic_pages) {
+		unsigned ram_panic_size = ram_panic_pages << PAGE_SHIFT;
+		unsigned long phys = meminfo.bank[0].start + meminfo.bank[0].size - ram_panic_size;
+		if (memblock_is_region_reserved(phys, ram_panic_size)) {
+			printk("ram panic: 0x%lx+0x%x overlaps in-use memory region\n", phys, ram_panic_size);
+		} else {
+			memblock_reserve(phys, ram_panic_size);
+			/* get virtual addr */
+			ram_panic_mem = (void *) __phys_to_virt(phys);
+			printk("ram panic: phys 0x%lx virt %p\n", phys, ram_panic_mem);
+		}
+	}
 
 	arm_mm_memblock_reserve();
 	arm_dt_memblock_reserve();

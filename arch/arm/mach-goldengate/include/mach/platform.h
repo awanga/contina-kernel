@@ -1,0 +1,440 @@
+/*
+ * arch/arm/mach-goldengate/include/mach/platform.h
+ *
+ * Copyright (c) Cortina-Systems Limited 2010.  All rights reserved.
+ *                Jason Li <jason.li@cortina-systems.com>
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with this program; if not, write to the Free Software
+ * Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+ */
+
+#ifndef __ASM_ARCH_PLATFORM_H
+#define __ASM_ARCH_PLATFORM_H
+
+#include "irqs-eb.h"
+#include "registers.h"
+
+/*
+ * Memory definitions
+ */
+#ifdef CONFIG_CORTINA_FPGA
+#define GOLDENGATE_BOOT_ROM_BASE        0xF5000000	/*  OTP-ROM */
+#define GOLDENGATE_BOOT_ROM_SIZE        SZ_16M
+#else
+#define GOLDENGATE_BOOT_ROM_BASE        0x80000000	/*  OTP-ROM */
+#define GOLDENGATE_BOOT_ROM_SIZE        SZ_256M
+#endif
+
+
+#ifdef CONFIG_CORTINA_FPGA
+/* FIXME: FPGA,DRAM 128M and QM cpu_banks is 7 */
+#define GOLDENGATE_DRAM_FOR_QM		SZ_16M
+#define GOLDENGATE_DRAM_SIZE		(SZ_128M - GOLDENGATE_DRAM_FOR_QM)
+#else
+
+#if defined(CONFIG_CORTINA_ENGINEERING_S) || defined(CONFIG_CORTINA_REFERENCE_S)
+/* ASIC,DRAM 512M and QM cpu_banks is 7 */
+#define GOLDENGATE_DRAM_FOR_QM		SZ_32M
+#define GOLDENGATE_DRAM_SIZE		(SZ_256M - GOLDENGATE_DRAM_FOR_QM)
+#else
+/* ASIC,DRAM 256M and QM cpu_banks is 7 */
+#define GOLDENGATE_DRAM_FOR_QM		SZ_64M
+#define GOLDENGATE_DRAM_SIZE		(SZ_512M - GOLDENGATE_DRAM_FOR_QM)
+#endif
+#endif
+/* ------------------------------------------------------------------------
+ *  GoldenGate Registers
+ * ------------------------------------------------------------------------
+ *
+ */
+
+/* ------------------------------------------------------------------------
+ *  GoldenGate control registers
+ * ------------------------------------------------------------------------
+ */
+
+//#define BIT(x)             (1UL << (x))
+
+/*
+ * GOLDENGATE_IDFIELD
+ *
+ * 31:24 = manufacturer (0x41 = ARM)
+ * 23:16 = architecture (0x08 = AHB system bus, ASB processor bus)
+ * 15:12 = FPGA (0x3 = XVC600 or XVC600E)
+ * 11:4  = build value
+ * 3:0   = revision number (0x1 = rev B (AHB))
+ */
+
+/*
+ * Peripheral addresses
+ */
+/* SMP relative */
+#ifdef CONFIG_CORTINA_FPGA
+#define GOLDENGATE_SCU_BASE		0x1E000000	/* SCU registers */
+#define GOLDENGATE_GIC_CPU_BASE		0x1E000100	/* Generic interrupt controller CPU interface */
+#define GOLDENGATE_TWD_BASE		0x1E000600	/* CPU Timer & watch dog */
+#define GOLDENGATE_GIC_DIST_BASE	0x1E001000	/* Generic interrupt controller distributor */
+#define GOLDENGATE_L220_BASE		0xF5010000	/* L220 registers */
+#else
+#define GOLDENGATE_SCU_BASE		0xF8000000	/* SCU registers */
+#define GOLDENGATE_GIC_CPU_BASE		0xF8000100	/* Generic interrupt controller CPU interface */
+#define GOLDENGATE_TWD_BASE		0xF8000600	/* CPU Timer & watch dog */
+#define GOLDENGATE_GIC_DIST_BASE	0xF8001000	/* Generic interrupt controller distributor */
+#define GOLDENGATE_L220_BASE		0xF5010000	/* L220 registers */
+#endif
+#define GOLDENGATE_SYS_PLD_CTRL1	0x74	/* Register offset for MPCore sysctl */
+
+/* Onboard peripheral */
+#ifdef CONFIG_CORTINA_FPGA	// FPGA use only map 0xE0000000 ~ 0xFFFFFFFF(Ignore ARM's peripheral)
+#define GOLDENGATE_DRAM_BASE		0xE0000000
+#else
+#define GOLDENGATE_DRAM_BASE		0x00000000
+#endif
+#define GOLDENGATE_ACP_BASE		0x40000000
+
+#ifdef CONFIG_CORTINA_FPGA
+#define GOLDENGATE_FLASH_BASE		0xE8000000
+#define GOLDENGATE_PCIE0_BASE		0xF8000000
+#define GOLDENGATE_PCIE1_BASE		0xFA000000
+#define GOLDENGATE_PCI_MEM_SIZE		SZ_32M
+#define GOLDENGATE_FLASH_SIZE		SZ_64M
+#else
+#define GOLDENGATE_FLASH_BASE		0xE0000000
+#define GOLDENGATE_PCIE0_BASE		0x80000000
+#define GOLDENGATE_PCIE1_BASE		0xA0000000
+#define GOLDENGATE_PCIE2_BASE		0xC0000000
+#define GOLDENGATE_PCI_MEM_SIZE		SZ_512M
+#define GOLDENGATE_FLASH_SIZE		SZ_256M
+#endif
+
+/* AHB/AXI peripheral */
+#define GOLDENGATE_DDRC_BASE		0xF0500000
+#define GOLDENGATE_AHCI_BASE		0xF4100000
+#define GOLDENGATE_DMA_BASE		DMA_DMA_LSO_RXDMA_CONTROL
+#define GOLDENGATE_SECURE_BASE		0xF0500000	/* ? */
+#define GOLDENGATE_FLASH_CTRL_BASE	FLASH_ID	/* Flash Controller */
+#define GOLDENGATE_NIMAC_BASE		NI_TOP_NI_INTF_RST_CONFIG
+#define GOLDENGATE_OHCI_BASE		0xF4040000
+#define GOLDENGATE_EHCI_BASE		0xF4000000
+#define GOLDENGATE_USB_DEVICE_BASE	0xF4080000
+#define GOLDENGATE_LCDC_BASE		0xF4200000
+#define GOLDENGATE_SDC_BASE		0xF40C0000
+#define GOLDENGATE_TRNG_BASE		TRNG_CNTL
+#define GOLDENGATE_OTP_BASE		0xf5008000
+
+/* APB */
+#define GOLDENGATE_REGBUS_BASE      	PER_PERIPHERAL_INTERRUPT_0
+#define GOLDENGATE_TIME0_BASE		PER_TMR_LD1
+#define GOLDENGATE_TIME1_BASE		PER_TMR_LD2
+#define GOLDENGATE_WDT0_BASE		(GOLDENGATE_TWD_BASE+0x20)
+#define GOLDENGATE_GPIO0_BASE		PER_GPIO0_CFG
+#define GOLDENGATE_GPIO1_BASE		PER_GPIO1_CFG
+#define GOLDENGATE_GPIO2_BASE		PER_GPIO2_CFG
+#define GOLDENGATE_GPIO3_BASE		PER_GPIO3_CFG
+#define GOLDENGATE_GPIO4_BASE		PER_GPIO4_CFG
+#define GOLDENGATE_UART0_BASE		PER_UART0_CFG
+#define GOLDENGATE_UART1_BASE		PER_UART1_CFG
+#define GOLDENGATE_UART2_BASE		PER_UART2_CFG
+#define GOLDENGATE_UART3_BASE		PER_UART3_CFG
+#define GOLDENGATE_PWM_BASE		PER_PWM_TIMER_PERIOD
+#define GOLDENGATE_SPI_BASE		PER_SPI_CLK
+#define GOLDENGATE_BIW_BASE		PER_BIW_CFG
+#define GOLDENGATE_DMA_SSP_BASE		DMA_DMA_SSP_RXDMA_CONTROL
+#define GOLDENGATE_SSP0_BASE		DMA_SSP_ID
+#define GOLDENGATE_SSP1_BASE		(GOLDENGATE_SSP0_BASE+0x80)
+#define GOLDENGATE_CIR_BASE		CIR_PWRCTRL_CIR_ID
+#define GOLDENGATE_POWERC_BASE		CIR_PWRCTRL_PWR_CTRL0
+#define GOLDENGATE_SPDIF_BASE		SPDIF_DATA
+#define GOLDENGATE_RTC_BASE		RTC_RTCON
+#define GOLDENGATE_MDIO_BASE		PER_MDIO_CFG
+#define GOLDENGATE_CLCD_BASE		0xF4200000
+#define GOLDENGATE_GLOBAL_BASE		GLOBAL_JTAG_ID
+/* RCPU Memory map */
+#define GOLDENGATE_RCPU_DRAM0_BASE	0xF6000000
+#define GOLDENGATE_RCPU_IRAM0_BASE	0xF6008000
+#define GOLDENGATE_RCPU_DRAM1_BASE	0xF6020000
+#define GOLDENGATE_RCPU_IRAM1_BASE	0xF6028000
+#define GOLDENGATE_RCPU_RRAM0_BASE	0xF6200000
+#define GOLDENGATE_RCPU_RRAM1_BASE	0xF6400000
+#define GOLDENGATE_RCPU_CRYPT0_BASE	0xF6600000
+#define GOLDENGATE_RCPU_CRYPT1_BASE	0xF6700000
+#define GOLDENGATE_RCPU_REG_BASE	0xF6800000
+#define GOLDENGATE_RCPU_SADB_BASE	0xF6900000
+#define GOLDENGATE_RCPU_PKBF_BASE	0xF6A00000
+/* RCPU Memory map */
+#define GOLDENGATE_RCPU_DMA		RECIRC_TOP_RECIR_R_DMA_RXDMA_CONTROL
+#define GOLDENGATE_RCPU_AXI		RECIRC_TOP_RECIR_R_AXI_CONFIG
+#define GOLDENGATE_RCPU_N_AXI		RECIRC_TOP_N_AXI_CONFIG
+#define GOLDENGATE_RCPU_NI		RECIRC_TOP_RECPU_NI_CFG_BURST_SIZE
+#define GOLDENGATE_XRAM_BASE		0xF0400000
+#define GOLDENGATE_DMA_LSO_BASE		DMA_DMA_LSO_RXDMA_CONTROL
+#define GOLDENGATE_NI_TOP_BASE		NI_TOP_NI_INTF_RST_CONFIG
+#define GOLDENGATE_FE_TOP_BASE		FETOP_FE_SCRATCH
+#define GOLDENGATE_QM_TOP_BASE		QM_CONFIG_0
+#define GOLDENGATE_TM_TOP_BASE		TM_BM_CONFIG_0
+#define GOLDENGATE_SCH_BASE		SCH_CONTROL
+#define GOLDENGATE_TS_BASE		TS_T_DMA_RXDMA_CONTROL
+
+/*
+ * Golden Gate Interrupt Line
+ */
+#define GOLDENGATE_IRQ_WDT		30	/* CPU native WDT */
+#define GOLDENGATE_IRQ_GLOBAL		IRQ_GLOBAL_SYS
+#define GOLDENGATE_IRQ_NE		IRQ_NET_ENG
+#define GOLDENGATE_IRQ_ARM		IRQ_ARM_PARITY
+#define GOLDENGATE_IRQ_REGBUS		IRQ_PERI_REGBUS
+#define GOLDENGATE_IRQ_L2		IRQ_L2_CTRL
+#define GOLDENGATE_IRQ_SDRAM		IRQ_SDRAM_CTRL
+#define GOLDENGATE_IRQ_UART0		IRQ_UART0
+#define GOLDENGATE_IRQ_UART1		IRQ_UART1
+#ifndef CONFIG_CORTINA_FPGA
+#define GOLDENGATE_IRQ_UART2		IRQ_UART2
+#define GOLDENGATE_IRQ_UART3		IRQ_UART3
+#endif
+#define GOLDENGATE_IRQ_RTCALM		IRQ_RTC_ALM
+#define GOLDENGATE_IRQ_RTCPRI		IRQ_RTC_PRI
+#define GOLDENGATE_IRQ_WOL0		IRQ_WOL0
+#define GOLDENGATE_IRQ_WOL1		IRQ_WOL1
+#define GOLDENGATE_IRQ_WOL2		IRQ_WOL2
+#define GOLDENGATE_IRQ_DMA		IRQ_DMA
+#define GOLDENGATE_IRQ_SW0		IRQ_SW0
+#define GOLDENGATE_IRQ_SW1		IRQ_SW1
+#define GOLDENGATE_IRQ_FLSH		IRQ_FLASH_CTRL
+#define GOLDENGATE_IRQ_TS		IRQ_TS_CTRL
+#define GOLDENGATE_IRQ_CIR		IRQ_CIR_CTRL
+#define GOLDENGATE_IRQ_PWC		IRQ_PWR_CTRL
+#define GOLDENGATE_IRQ_MB0		IRQ_MB0
+#define GOLDENGATE_IRQ_MB1		IRQ_MB1
+#define GOLDENGATE_IRQ_CRYPT0		IRQ_CRYPT_ENG0
+#define GOLDENGATE_IRQ_CRYPT1		IRQ_CRYPT_ENG1
+#define GOLDENGATE_IRQ_MMC		IRQ_SDC
+#define GOLDENGATE_IRQ_CTIRQ0		IRQ_ARM_CTIRQ0
+#define GOLDENGATE_IRQ_CTIRQ1		IRQ_ARM_CTIRQ1
+#define GOLDENGATE_IRQ_USBD		IRQ_USB_DEV
+#define GOLDENGATE_IRQ_EHCI		IRQ_USB_EHCI
+#ifndef CONFIG_CORTINA_FPGA
+#define GOLDENGATE_IRQ_OHCI		IRQ_USB_OHCI
+#endif
+#define GOLDENGATE_IRQ_AHCI		IRQ_AHCI_CTRL
+#define GOLDENGATE_IRQ_PCIE0		IRQ_PCIE0
+#define GOLDENGATE_IRQ_PCIE1		IRQ_PCIE1
+#ifndef CONFIG_CORTINA_FPGA
+#define GOLDENGATE_IRQ_PCIE2		IRQ_PCIE2
+#endif
+#define GOLDENGATE_IRQ_LCD		IRQ_LCD
+#ifndef CONFIG_CORTINA_FPGA
+#define GOLDENGATE_IRQ_SPDIF		IRQ_SPDIF
+#endif
+
+/* INTERRUPT on REGBUS */
+#define GOLDENGATE_IRQ_SW2	 	IRQ_REGBUS_SOFT0
+#define GOLDENGATE_IRQ_SW3 		IRQ_REGBUS_SOFT1
+#define GOLDENGATE_IRQ_TIMER0 		IRQ_REGBUS_TIMER0
+#define GOLDENGATE_IRQ_TIMER1 		IRQ_REGBUS_TIMER1
+#define GOLDENGATE_IRQ_AXII	 	IRQ_REGBUS_AXII
+#define GOLDENGATE_IRQ_SPI	 	IRQ_REGBUS_SPI
+#define GOLDENGATE_IRQ_GPIO0 		IRQ_REGBUS_GPIO0
+#define GOLDENGATE_IRQ_GPIO1 		IRQ_REGBUS_GPIO1
+#define GOLDENGATE_IRQ_GPIO2 		IRQ_REGBUS_GPIO2
+#define GOLDENGATE_IRQ_GPIO3 		IRQ_REGBUS_GPIO3
+#define GOLDENGATE_IRQ_GPIO4 		IRQ_REGBUS_GPIO4
+#define GOLDENGATE_IRQ_BIWI	 	IRQ_REGBUS_BIWI
+#define GOLDENGATE_IRQ_MDIO	 	IRQ_REGBUS_MDIO
+#define GOLDENGATE_IRQ_SSP0	 	IRQ_REGBUS_SSP
+#define GOLDENGATE_IRQ_TRNG	 	IRQ_REGBUS_TRNG
+
+/*  Interrupt on DMA */
+#define GOLDENGATE_IRQ_DMA_DESC		IRQ_DMA_DESC
+#define GOLDENGATE_IRQ_DMA_RX0		IRQ_DMA_RX_0
+#define GOLDENGATE_IRQ_DMA_RX1		IRQ_DMA_RX_1
+#define GOLDENGATE_IRQ_DMA_RX2		IRQ_DMA_RX_2
+#define GOLDENGATE_IRQ_DMA_RX3		IRQ_DMA_RX_3
+#define GOLDENGATE_IRQ_DMA_RX4		IRQ_DMA_RX_4
+#define GOLDENGATE_IRQ_DMA_RX5		IRQ_DMA_RX_5
+#define GOLDENGATE_IRQ_DMA_RX6		IRQ_DMA_RX_6
+#define GOLDENGATE_IRQ_DMA_RX7		IRQ_DMA_RX_7
+#define GOLDENGATE_IRQ_DMA_TX0		IRQ_DMA_TX_0
+#define GOLDENGATE_IRQ_DMA_TX1		IRQ_DMA_TX_1
+#define GOLDENGATE_IRQ_DMA_TX2		IRQ_DMA_TX_2
+#define GOLDENGATE_IRQ_DMA_TX3		IRQ_DMA_TX_3
+#define GOLDENGATE_IRQ_DMA_TX4		IRQ_DMA_TX_4
+#define GOLDENGATE_IRQ_DMA_TX5		IRQ_DMA_TX_5
+#define GOLDENGATE_IRQ_DMA_TX6		IRQ_DMA_TX_6
+#define GOLDENGATE_IRQ_DMA_TX7		IRQ_DMA_TX_7
+#define GOLDENGATE_IRQ_DMA_BMC0		IRQ_DMA_BMC0
+#define GOLDENGATE_IRQ_DMA_BMC1		IRQ_DMA_BMC1
+
+/*  Interrupt on DMASSP */
+#define GOLDENGATE_IRQ_DMASSP_DESC		IRQ_DMASSP_DESC
+#define GOLDENGATE_IRQ_DMASSP_RX5		IRQ_DMASSP_RX_5
+#define GOLDENGATE_IRQ_DMASSP_RX6		IRQ_DMASSP_RX_6
+#define GOLDENGATE_IRQ_DMASSP_RX7		IRQ_DMASSP_RX_7
+#define GOLDENGATE_IRQ_DMASSP_TX5		IRQ_DMASSP_TX_5
+#define GOLDENGATE_IRQ_DMASSP_TX6		IRQ_DMASSP_TX_6
+#define GOLDENGATE_IRQ_DMASSP_TX7		IRQ_DMASSP_TX_7
+#define GOLDENGATE_IRQ_DMASSP_AXI_RX_RD_DESC	IRQ_DMASSP_AXI_RX_RD_DESC
+#define GOLDENGATE_IRQ_DMASSP_AXI_TX_RD_DESC	IRQ_DMASSP_AXI_TX_RD_DESC
+#define GOLDENGATE_IRQ_DMASSP_AXI_TX_RD_DATA	IRQ_DMASSP_AXI_TX_RD_DATA
+#define GOLDENGATE_IRQ_DMASSP_AXI_RX_WR_DESC	IRQ_DMASSP_AXI_RX_WR_DESC
+#define GOLDENGATE_IRQ_DMASSP_AXI_RX_WR_DATA	IRQ_DMASSP_AXI_RX_WR_DATA
+#define GOLDENGATE_IRQ_DMASSP_AXI_TX_WR_DESC	IRQ_DMASSP_AXI_TX_WR_DESC
+#define GOLDENGATE_IRQ_DMASSP_SSP0		IRQ_DMASSP_SSP0
+#define GOLDENGATE_IRQ_DMASSP_SSP1		IRQ_DMASSP_SSP1
+
+/* Enable for Peripheral ACP */
+#define CS75XX_ACP_ENABLE_AHCI		0x00000001
+#define CS75XX_ACP_ENABLE_MMC		0x00000002
+#define CS75XX_ACP_ENABLE_USB		0x00000004
+#define CS75XX_ACP_ENABLE_LCD		0x00000008
+#define CS75XX_ACP_ENABLE_SSP		0x00000010
+#define CS75XX_ACP_ENABLE_CRYPT		0x00000020
+#define CS75XX_ACP_ENABLE_TS		0x00000040
+#define CS75XX_ACP_ENABLE_DMA		0x00000080
+#define CS75XX_ACP_ENABLE_FLASH		0x00000100
+#define CS75XX_ACP_ENABLE_NI		0x00000200
+#define CS75XX_ACP_ENABLE_PCI_RX	0x00000400 // PCI ACP for RX
+#define CS75XX_ACP_ENABLE_PCI_TX        0x00000800 // PCI ACP for TX
+
+#define GOLDENGATE_IPC_MEM_SIZE		SZ_2M
+#define GOLDENGATE_IPC_BASE		(GOLDENGATE_DRAM_BASE + SZ_32M - GOLDENGATE_IPC_MEM_SIZE)
+#define GOLDENGATE_IPC_BASE_VADDR	0xef000000
+/*
+ * Cortina TIMER Module
+ */
+#define TIMER0_BASE			GOLDENGATE_TIME0_BASE
+#define TIMER1_BASE			GOLDENGATE_TIME1_BASE
+#define TLOAD_OFFSET			0X00	//Timer Reload value
+#define TCONF_OFFSET			0x04	//Timer Configuration register
+#define TINSTV_OFFSET			0x08	//Timer Instantaneous value
+#define TINT_EN_OFFSET			0x0C	//Timer Interrupt enable
+#define TINT_OFFSET			0x14	//Timer Interrupt (write 1 clear)
+#define TINT_STAT_OFFSET		0x18	//Timer Interrupt Status
+#define TIMER_LOAD_ENABLE		PER_TMR_LOADE	//Timer load enable
+
+/* Timer Control register bit definitions */
+#define GPT_CTRL_EN			(1 << 7)
+#define GPT_CTRL_RLMODE			(1 << 6)
+#define GPT_CTRL_CLKSEL			(1 << 2)
+#define CTRL_CLKSEL_DIRECT		(0)
+#define CTRL_CLKSEL_DV_64		(1 << 2)
+#define CTRL_CLKSEL_DV_1024		(2 << 2)
+#define CTRL_CLKSEL_DV_4096		(3 << 2)
+#define GPT_IE_EN			(1 << 0)
+#define GPT_INT_EN			(1 << 0)
+#define UPDATE_GPT0_LDVAL		(1 << 1)
+#define UPDATE_GPT1_LDVAL		(1 << 2)
+
+/*
+ * Cortina UART Module
+ */
+#define UART0_BASE_ADDR         GOLDENGATE_UART0_BASE
+#define UART1_BASE_ADDR         GOLDENGATE_UART1_BASE
+#define UART2_BASE_ADDR         GOLDENGATE_UART2_BASE
+#define UART3_BASE_ADDR         GOLDENGATE_UART3_BASE
+/* Register definitions */
+#define UCFG			(PER_UART0_CFG - PER_UART0_CFG)	/* UART config register */
+#define UFC			(PER_UART0_FC - PER_UART0_CFG)	/* flow control */
+#define URX_SAMPLE 		(PER_UART0_RX_SAMPLE - PER_UART0_CFG)	/* UART RX Sample register */
+#define URT_TUNE		(PER_UART0_TUN - PER_UART0_CFG)	/* Fine tune of UART clk */
+#define UTX_DATA 		(PER_UART0_TXDAT - PER_UART0_CFG)	/* UART TX Character data */
+#define URX_DATA 		(PER_UART0_RXDAT - PER_UART0_CFG)	/* UART RX Character data */
+#define UINFO			(PER_UART0_INFO - PER_UART0_CFG)	/* UART Info */
+#define UINT_EN 		(PER_UART0_IE_0 - PER_UART0_CFG)	/* UART Interrupt enable */
+#define UINT_CLR		(PER_UART0_INT_0 - PER_UART0_CFG)	/* UART Interrupt setting/clearing */
+#define UINT_STAT		(PER_UART0_STAT - PER_UART0_CFG)	/* UART Interrupt Status */
+
+/* UART Control Register Bit Fields.*/
+#define UCFG_BAUD_COUNT			(8)
+#define UCFG_EN				(1 << 7)
+#define UCFG_RX_EN			(1 << 6)
+#define UCFG_TX_EN			(1 << 5)
+#define UCFG_PARITY_EN			(1 << 4)
+#define UCFG_PARITY_SEL			(1 << 3)
+#define UCFG_2STOP_BIT			(1 << 2)
+#define UCFG_CNT1			(1 << 1)
+#define UCFG_CNT0			(1 << 0)
+#define UCFG_CHAR_5			0
+#define UCFG_CHAR_6			1
+#define UCFG_CHAR_7			2
+#define UCFG_CHAR_8			3
+
+#define  UINFO_TX_FIFO_EMPTY		(1<<3)
+#define  UINFO_TX_FIFO_FULL		(1 << 2)
+#define  UINFO_RX_FIFO_EMPTY		(1<<1)
+#define  UINFO_RX_FIFO_FULL		(1 << 0)
+
+#define UINT_RX_NON_EMPTY		(1 << 6)
+#define UINT_TX_EMPTY			(1 << 5)
+#define UINT_RX_UNDERRUN 		(1 << 4)
+#define UINT_RX_OVERRUN			(1 << 3)
+#define UINT_RX_PARITY_ERR		(1 << 2)
+#define UINT_RX_STOP_ERR		(1 << 1)
+#define UINT_TX_OVERRUN			(1 << 0)
+#define UINT_MASK_ALL			0x7F
+
+// UART CONF bits
+#define SHF_UCONF_WL       0
+#define MSK_UCONF_WL       (0x3 << SHF_UCONF_WL)
+#define VAL_UCONF_WL_5     (0x0 << SHF_UCONF_WL)
+#define VAL_UCONF_WL_6     (0x1 << SHF_UCONF_WL)
+#define VAL_UCONF_WL_7     (0x2 << SHF_UCONF_WL)
+#define VAL_UCONF_WL_8     (0x3 << SHF_UCONF_WL)
+
+#define SHF_UCONF_SB       2
+#define MSK_UCONF_SB       (0x1 << SHF_UCONF_SB)
+#define VAL_UCONF_SB_1     (0x0 << SHF_UCONF_SB)
+#define VAL_UCONF_SB_2     (0x1 << SHF_UCONF_SB)
+
+#define SHF_UCONF_PM       3
+#define MSK_UCONF_PM       (0x3 << SHF_UCONF_PM)
+#define VAL_UCONF_PM_N     (0x0 << SHF_UCONF_PM)
+#define VAL_UCONF_PM_O     (0x2 << SHF_UCONF_PM)
+#define VAL_UCONF_PM_E     (0x3 << SHF_UCONF_PM)
+
+/*
+ * CLOCK definetion
+ */
+#ifdef CONFIG_CORTINA_FPGA
+#define CPU_CLOCK		(400 * 1000000)	/* CA-9 test chip run at 400MHz */
+#define CPU_PRIPHCLK		(CPU_CLOCK / 2)	/* CPU Private peripheral clock */
+#define AXI_CLOCK		(104 * 1000000)	/* Bus speed */
+#define APB_CLOCK		(50 * 1000000)	/* Peripheral clock */
+#define SYSTEM_CLOCK		APB_CLOCK
+#else
+#define SYSTEM_CLOCK		(800 * 1000000)
+#define APB_CLOCK		(CONFIG_PLATFORM_APB_CLK * 1000000)
+#endif
+
+#define TICKS_PER_uSEC		(APB_CLOCK / 1000000)
+
+#define G2_UART_CLOCK		APB_CLOCK
+
+#define GOLDENGATE_BAUD_230400		(G2_UART_CLOCK / 230400)
+#define GOLDENGATE_BAUD_115200		(G2_UART_CLOCK / 115200)
+#define GOLDENGATE_BAUD_57600		(G2_UART_CLOCK / 57600)
+#define GOLDENGATE_BAUD_38400		(G2_UART_CLOCK / 38400)
+#define GOLDENGATE_BAUD_19200		(G2_UART_CLOCK / 19200)
+#define GOLDENGATE_BAUD_14400		(G2_UART_CLOCK / 14400)
+#define GOLDENGATE_BAUD_9600		(G2_UART_CLOCK / 9600)
+#define GOLDENGATE_BAUD_DEFAULT		GOLDENGATE_BAUD_115200
+
+struct platform_clk {
+	unsigned int	cpu_clk;
+	unsigned int	apb_clk;
+	unsigned int	axi_clk;
+};
+
+void get_platform_clk(struct platform_clk *clk);
+
+#endif				/* __ASM_ARCH_PLATFORM_H */

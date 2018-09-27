@@ -84,6 +84,10 @@ static const struct tcf_ext_map u32_ext_map = {
 	.police = TCA_U32_POLICE
 };
 
+#ifdef CONFIG_CS752X_HW_ACCELERATION
+extern void cs_qos_check_qos_fields(struct sk_buff *skb, int offset, u32 mask);
+#endif
+
 static inline unsigned int u32_hash_fold(__be32 key,
 					 const struct tc_u32_sel *sel,
 					 u8 fshift)
@@ -146,6 +150,9 @@ next_knode:
 				n = n->next;
 				goto next_knode;
 			}
+#ifdef CONFIG_CS752X_HW_ACCELERATION
+			cs_qos_check_qos_fields(skb, toff, key->mask);
+#endif
 #ifdef CONFIG_CLS_U32_PERF
 			n->pf->kcnts[j] += 1;
 			j++;

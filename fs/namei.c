@@ -2046,6 +2046,9 @@ struct dentry *lock_rename(struct dentry *p1, struct dentry *p2)
 	mutex_lock_nested(&p2->d_inode->i_mutex, I_MUTEX_CHILD);
 	return NULL;
 }
+#ifdef CONFIG_ARCH_GOLDENGATE
+EXPORT_SYMBOL(sys_mknod);	/*D2 MOD*/
+#endif /* CONFIG_ARCH_GOLDENGATE */
 
 void unlock_rename(struct dentry *p1, struct dentry *p2)
 {

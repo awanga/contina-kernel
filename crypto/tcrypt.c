@@ -36,6 +36,13 @@
 #include "tcrypt.h"
 #include "internal.h"
 
+#ifdef CONFIG_CORTINA_GKCI
+#include <linux/crypto.h>
+#include <crypto/authenc.h>
+#include <linux/pagemap.h>
+#include <linux/rtnetlink.h>
+#endif
+
 /*
  * Need slab memory for testing (size in number of pages).
  */
@@ -97,8 +104,10 @@ static int test_cipher_cycles(struct blkcipher_desc *desc, int enc,
 	int ret = 0;
 	int i;
 
+#ifndef CONFIG_CORTINA_GKCI
 	local_bh_disable();
 	local_irq_disable();
+#endif
 
 	/* Warm-up run. */
 	for (i = 0; i < 4; i++) {
@@ -129,8 +138,10 @@ static int test_cipher_cycles(struct blkcipher_desc *desc, int enc,
 	}
 
 out:
+#ifndef CONFIG_CORTINA_GKCI
 	local_irq_enable();
 	local_bh_enable();
+#endif
 
 	if (ret == 0)
 		printk("1 operation in %lu cycles (%d bytes)\n",
@@ -419,7 +430,11 @@ static void test_hash_speed(const char *algo, unsigned int sec,
 	struct scatterlist sg[TVMEMSIZE];
 	struct crypto_hash *tfm;
 	struct hash_desc desc;
+#ifdef CONFIG_CORTINA_GKCI
+	char output[1024];
+#else
 	static char output[1024];
+#endif
 	int i;
 	int ret;
 
@@ -503,6 +518,205 @@ static inline int do_one_ahash_op(struct ahash_request *req, int ret)
 	}
 	return ret;
 }
+
+#ifdef CONFIG_CORTINA_GKCI
+static inline int do_one_aead_op(struct aead_request *req, int ret)
+{
+	if (ret == -EINPROGRESS || ret == -EBUSY) {
+		struct tcrypt_result *tr = req->base.data;
+
+		ret = wait_for_completion_interruptible(&tr->completion);
+		if (!ret)
+			ret = tr->err;
+		INIT_COMPLETION(tr->completion);
+	}
+	return ret;
+}
+
+
+static int test_aead_jiffies(struct aead_request *req, int enc,
+				    int blen,  int sec)
+{
+	unsigned long start, end;
+	int bcount;
+	int ret;
+	if (sec==0)
+		sec=1;
+	for (start = jiffies, end = start + sec * HZ, bcount = 0;
+	     time_before(jiffies, end); bcount++) {
+		if (enc)
+			ret = do_one_aead_op(req,crypto_aead_encrypt(req));
+		else
+			ret = do_one_aead_op(req,crypto_aead_decrypt(req));
+	}
+
+	printk("%6u opers/sec, %9lu bytes/sec\n",
+	       bcount / sec, ((long)bcount * blen) / sec);
+
+	return 0;
+}
+
+
+static void test_aead_speed(const char *algo, unsigned int sec,
+	 struct cipher_speed_template *template, unsigned int tcount, u8 *c_keysize)
+{
+	unsigned int ret, i, j, iv_len;
+	const char *key, *pp, iv[128];
+	struct crypto_aead *tfm;
+	struct scatterlist sg[TVMEMSIZE];
+	struct tcrypt_result tresult;
+	struct aead_request *req;
+	char *input;
+	char *output;
+	int blksize = 0;
+	//int clen = 16;		/* len of data */
+	unsigned int authsize;
+	u32 *b_size;
+	struct crypto_authenc_key_param *param;
+	struct rtattr *rta;
+	char assoc[32] = "\x49\x5c\x50\x1f\x1d\x94\xcc\x81"
+				  "\xba\xb7\xb6\x03\xaf\xa5\xc1\xa1"
+				  "\xd8\x5c\x42\x68\xe0\x6c\xda\x89"
+				  "\x05\xac\x56\xac\x1b\x2a\xd3\x86";
+
+	int assoclen = 32;
+	int h_keysize=16;
+	int enc;
+
+	printk("\ntesting speed of %s \n", algo);
+
+	tfm = crypto_alloc_aead(algo, 0, 0);
+
+	if (IS_ERR(tfm)) {
+		printk("failed to load transform for %s: %ld\n", algo,
+			   PTR_ERR(tfm));
+		return;
+	}
+
+	authsize = crypto_aead_authsize(tfm);
+	iv_len = crypto_aead_ivsize(tfm);
+	blksize = ALIGN(crypto_aead_blocksize(tfm), 4);
+	input = kzalloc(9219 , GFP_KERNEL);
+	output = kzalloc(9219 , GFP_KERNEL);
+
+	req = aead_request_alloc(tfm, GFP_KERNEL);
+	if (!req) {
+		pr_err("aead request allocation failure\n");
+		goto out;
+	}
+
+	init_completion(&tresult.completion);
+	ahash_request_set_callback(req, CRYPTO_TFM_REQ_MAY_BACKLOG,
+				   tcrypt_complete, &tresult);
+
+	i = 0;
+	do {
+
+		b_size = block_sizes;
+		do {
+
+				if ((*c_keysize + h_keysize) > TVMEMSIZE * PAGE_SIZE) {
+						printk("template (%u) too big for "
+							   "tvmem (%lu)\n", *c_keysize + *b_size,
+							   TVMEMSIZE * PAGE_SIZE);
+						goto out;
+				}
+				int keylen = h_keysize + *c_keysize + RTA_SPACE(sizeof(*param));
+				if (keylen > TVMEMSIZE*PAGE_SIZE ) {
+						printk("keylen (%u) too big for "
+						   "tvmem (%lu)\n",keylen,
+						   TVMEMSIZE*PAGE_SIZE );
+						goto out;
+				}
+				if (iv_len > 128 ) {
+						printk("iv_len (%u) too big for "
+								   "128 \n",iv_len);
+						goto out;
+				}
+
+
+				memset(tvmem[0], 0xff, PAGE_SIZE);
+
+				memset(iv, 1, iv_len);
+				crypto_aead_clear_flags(tfm, ~0);
+				crypto_aead_set_flags(tfm, CRYPTO_TFM_REQ_WEAK_KEY);
+
+
+				pp = tvmem[0]; //key
+				rta = (void *)pp;
+				rta->rta_type = CRYPTO_AUTHENC_KEYA_PARAM;
+				rta->rta_len = RTA_LENGTH(sizeof(*param));
+				param = RTA_DATA(rta);
+				pp += RTA_SPACE(sizeof(*param));
+
+				if(h_keysize) {
+					memset(pp, i, h_keysize);
+					pp += h_keysize;
+				}
+
+				param->enckeylen = cpu_to_be32(*c_keysize);
+				memset(pp, i+1, *c_keysize);
+
+				ret = crypto_aead_setkey(tfm, tvmem[0], keylen);
+				if (ret) {
+					printk(KERN_ERR "alg: aead: Failed to set "
+						   "the key for %s\n",
+						   algo);
+					goto out;
+				}
+				ret = crypto_aead_setauthsize(tfm, authsize);
+				if (ret) {
+					printk(KERN_ERR "alg: aead: Failed to set "
+						   "authsize to %u on test for %s\n",
+						   authsize, algo);
+					goto out;
+				}
+
+				struct scatterlist src_sg, dst_sg;
+				struct scatterlist asg;
+				memset(input, 0xff, *b_size + authsize);
+				enc = ENCRYPT;
+				sg_init_one(&src_sg, input, *b_size +  (enc ? 0 : authsize));
+				sg_init_one(&dst_sg, output, *b_size +  (enc ?  authsize : 0));
+				sg_init_one(&asg, assoc, assoclen);
+
+				printk("test %u %s (cipher %d bit key, hash %d bit key, %d byte blocks): ", i,
+												enc == ENCRYPT?"encryption":"decryption",
+												*c_keysize * 8,h_keysize*8, *b_size);
+
+				aead_request_set_crypt(req, &src_sg, &dst_sg,*b_size +  (enc ? 0 : authsize), iv);
+				aead_request_set_assoc(req, &asg, assoclen);
+
+				test_aead_jiffies(req,enc,*b_size ,sec);
+
+				enc = DECRYPT;
+
+				printk("test %u %s (cipher %d bit key, hash %d bit key, %d byte blocks): ", i,
+											enc == ENCRYPT?"encryption":"decryption",
+											*c_keysize * 8,h_keysize*8, *b_size);
+				memset(input, 0xff, *b_size + authsize);
+				sg_init_one(&src_sg, output, *b_size +  (enc ? 0 : authsize));
+				sg_init_one(&dst_sg, input, *b_size +  (enc ?  authsize : 0));
+				aead_request_set_crypt(req, &src_sg, &dst_sg,*b_size +	(enc ? 0 : authsize), iv);
+				aead_request_set_assoc(req, &asg, assoclen);
+
+				test_aead_jiffies(req,enc,*b_size ,sec);
+
+			b_size++;
+			i++;
+		} while (*b_size);
+		c_keysize++;
+	} while (*c_keysize);
+
+
+out:
+	kfree(input);
+	kfree(output);
+	aead_request_free(req);
+	crypto_free_aead(tfm);
+
+}
+#endif
 
 static int test_ahash_jiffies_digest(struct ahash_request *req, int blen,
 				     char *out, int sec)
@@ -658,7 +872,11 @@ static void test_ahash_speed(const char *algo, unsigned int sec,
 	struct tcrypt_result tresult;
 	struct ahash_request *req;
 	struct crypto_ahash *tfm;
+#ifdef CONFIG_CORTINA_GKCI
+	char output[1024];
+#else
 	static char output[1024];
+#endif
 	int i, ret;
 
 	printk(KERN_INFO "\ntesting speed of async %s\n", algo);
@@ -1152,6 +1370,43 @@ static int do_test(int m)
 	case 45:
 		ret += tcrypt_test("rfc4309(ccm(aes))");
 		break;
+#ifdef CONFIG_CORTINA_GKCI
+	case 46:
+		ret += tcrypt_test("ecb(aes)");
+		break;
+
+	case 47:
+		ret += tcrypt_test("cbc(aes)");
+		break;
+
+	case 48:
+		ret += tcrypt_test("xts(aes)");
+		break;
+
+	case 49:
+		ret += tcrypt_test("ctr(aes)");
+		break;
+
+	case 50:
+		ret += tcrypt_test("rfc3686(ctr(aes))");
+		break;
+
+	case 51:
+		ret += tcrypt_test("ecb(des)");
+		break;
+
+	case 52:
+		ret += tcrypt_test("cbc(des)");
+		break;
+
+	case 53:
+		ret += tcrypt_test("ecb(des3_ede)");
+		break;
+
+	case 54:
+		ret += tcrypt_test("cbc(des3_ede)");
+		break;
+#endif
 
 	case 100:
 		ret += tcrypt_test("hmac(md5)");
@@ -1491,6 +1746,48 @@ static int do_test(int m)
 	case 499:
 		break;
 
+#ifdef CONFIG_CORTINA_GKCI
+	case 500:
+
+	case 501:
+		test_aead_speed("authenc(hmac(sha1),cbc(aes))", sec,
+			NULL, 0,speed_template_16_24_32);
+
+		if (mode > 500 && mode < 600) break;
+
+	case 502:
+		test_aead_speed("authenc(hmac(sha1),cbc(des3_ede))", sec,
+			des3_speed_template, DES3_SPEED_VECTORS,speed_template_24);
+
+		if (mode > 500 && mode < 600) break;
+
+
+	case 503:
+		test_aead_speed("authenc(hmac(sha256),cbc(aes))", sec,
+			NULL, 0,speed_template_16_24_32);
+
+		if (mode > 500 && mode < 600) break;
+
+
+	case 504:
+		test_aead_speed("authenc(hmac(sha256),cbc(des3_ede))", sec,
+			des3_speed_template, DES3_SPEED_VECTORS,speed_template_24);
+
+		if (mode > 500 && mode < 600) break;
+
+
+	case 505:
+		test_aead_speed("authenc(hmac(md5),cbc(aes))", sec,
+			NULL, 0,speed_template_16_24_32);
+
+		if (mode > 500 && mode < 600) break;
+
+	case 506:
+		test_aead_speed("authenc(hmac(md5),cbc(des3_ede))", sec,
+			des3_speed_template, DES3_SPEED_VECTORS,speed_template_24);
+
+		break;
+#else
 	case 500:
 		test_acipher_speed("ecb(aes)", ENCRYPT, sec, NULL, 0,
 				   speed_template_16_24_32);
@@ -1562,6 +1859,7 @@ static int do_test(int m)
 		test_acipher_speed("xts(serpent)", DECRYPT, sec, NULL, 0,
 				   speed_template_32_64);
 		break;
+#endif
 
 	case 1000:
 		test_available();

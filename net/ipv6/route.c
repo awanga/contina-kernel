@@ -62,6 +62,10 @@
 #include <linux/sysctl.h>
 #endif
 
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+#include <mach/cs_kernel_hook_api.h>
+#endif
+
 static struct rt6_info *ip6_rt_copy(struct rt6_info *ort,
 				    const struct in6_addr *dest);
 static struct dst_entry	*ip6_dst_check(struct dst_entry *dst, u32 cookie);
@@ -1478,7 +1482,32 @@ install_route:
 
 	cfg->fc_nlinfo.nl_net = dev_net(dev);
 
+#ifndef CONFIG_LYNXE_KERNEL_HOOK
 	return __ip6_ins_rt(rt, &cfg->fc_nlinfo);
+#else /* CONFIG_LYNXE_KERNEL_HOOK */
+	err = __ip6_ins_rt(rt, &cfg->fc_nlinfo);
+
+	if (err == 0) {
+                const struct in6_addr *addr;
+                int addr_type;
+
+		if (cfg->fc_flags & RTF_GATEWAY) {
+                	addr = &cfg->fc_gateway;
+                	addr_type = ipv6_addr_type(addr);
+		}
+		else {
+			addr = &rt->rt6i_dst.addr;
+			addr_type = ipv6_addr_type(addr);
+		}
+
+                if ((addr_type & IPV6_ADDR_UNICAST) && !(addr_type & IPV6_ADDR_LINKLOCAL)) {
+                        if (cs_kernel_hook_ops.kho_l3_route_add_ipv6_static != NULL)
+                                cs_kernel_hook_ops.kho_l3_route_add_ipv6_static(0, cfg);
+                }
+        }
+
+	return err;
+#endif /* CONFIG_LYNXE_KERNEL_HOOK */
 
 out:
 	if (dev)
@@ -1526,6 +1555,11 @@ static int ip6_route_del(struct fib6_config *cfg)
 	struct rt6_info *rt;
 	int err = -ESRCH;
 
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+	const struct in6_addr *addr;
+	int addr_type;
+#endif
+
 	table = fib6_get_table(cfg->fc_nlinfo.nl_net, cfg->fc_table);
 	if (!table)
 		return err;
@@ -1550,7 +1584,30 @@ static int ip6_route_del(struct fib6_config *cfg)
 			dst_hold(&rt->dst);
 			read_unlock_bh(&table->tb6_lock);
 
+#ifndef CONFIG_LYNXE_KERNEL_HOOK
 			return __ip6_del_rt(rt, &cfg->fc_nlinfo);
+#else /* CONFIG_LYNXE_KERNEL_HOOK */
+
+                        if (cfg->fc_flags & RTF_GATEWAY) {
+                                addr = &cfg->fc_gateway;
+                                addr_type = ipv6_addr_type(addr);
+                        }
+                        else {
+                                addr = &rt->rt6i_dst.addr;
+                                addr_type = ipv6_addr_type(addr);
+                        }
+
+                        err = __ip6_del_rt(rt, &cfg->fc_nlinfo);
+
+                        if (err == 0) {
+                                if ((addr_type & IPV6_ADDR_UNICAST) && !(addr_type & IPV6_ADDR_LINKLOCAL)) {
+                                        if (cs_kernel_hook_ops.kho_l3_route_del_ipv6_static != NULL)
+                                                cs_kernel_hook_ops.kho_l3_route_del_ipv6_static(0, cfg);
+                                }
+                        }
+
+			return err;
+#endif /* CONFIG_LYNXE_KERNEL_HOOK */
 		}
 	}
 	read_unlock_bh(&table->tb6_lock);

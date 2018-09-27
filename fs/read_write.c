@@ -474,6 +474,9 @@ SYSCALL_DEFINE3(read, unsigned int, fd, char __user *, buf, size_t, count)
 	return ret;
 }
 
+#ifdef CONFIG_ARCH_GOLDENGATE
+EXPORT_SYMBOL(sys_read);	/*D2 MOD*/
+#endif /* CONFIG_ARCH_GOLDENGATE */
 SYSCALL_DEFINE3(write, unsigned int, fd, const char __user *, buf,
 		size_t, count)
 {
@@ -492,6 +495,9 @@ SYSCALL_DEFINE3(write, unsigned int, fd, const char __user *, buf,
 	return ret;
 }
 
+#ifdef CONFIG_ARCH_GOLDENGATE
+EXPORT_SYMBOL(sys_write);	/* D2 MOD */
+#endif /* CONFIG_ARCH_GOLDENGATE */
 SYSCALL_DEFINE(pread64)(unsigned int fd, char __user *buf,
 			size_t count, loff_t pos)
 {

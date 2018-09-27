@@ -68,6 +68,11 @@
 #include <linux/ratelimit.h>
 #include <linux/pm_runtime.h>
 
+#ifdef CONFIG_PM_RUNTIME
+#include <linux/pm_runtime.h>
+#endif
+
+
 #include "libata.h"
 #include "libata-transport.h"
 
@@ -92,6 +97,10 @@ const struct ata_port_operations sata_port_ops = {
 static unsigned int ata_dev_init_params(struct ata_device *dev,
 					u16 heads, u16 sectors);
 static unsigned int ata_dev_set_xfermode(struct ata_device *dev);
+#ifdef CONFIG_CORTINA_GKCI
+static unsigned int ata_dev_set_feature_timeout(struct ata_device *dev,
+					u8 enable, u8 feature, u16 timeout);
+#endif
 static void ata_dev_xfermask(struct ata_device *dev);
 static unsigned long ata_dev_blacklisted(const struct ata_device *dev);
 
@@ -1997,7 +2006,11 @@ retry:
 		 * SET_FEATURES spin-up subcommand before it will accept
 		 * anything other than the original IDENTIFY command.
 		 */
+#ifdef CONFIG_CORTINA_GKCI
+		err_mask = ata_dev_set_feature_timeout(dev, SETFEATURES_SPINUP, 0, 20000);
+#else
 		err_mask = ata_dev_set_feature(dev, SETFEATURES_SPINUP, 0);
+#endif
 		if (err_mask && id[2] != 0x738c) {
 			rc = -EIO;
 			reason = "SPINUP failed";
@@ -3718,8 +3731,15 @@ int sata_link_hardreset(struct ata_link *link, const unsigned long *timing,
 	u32 scontrol;
 	int rc;
 
+#ifdef CONFIG_CORTINA_GKCI
+	int tried_cnt = 10;
+	u32 sstatus;
+#endif
 	DPRINTK("ENTER\n");
 
+#ifdef CONFIG_CORTINA_GKCI
+	do {
+#endif
 	if (online)
 		*online = false;
 
@@ -3760,6 +3780,18 @@ int sata_link_hardreset(struct ata_link *link, const unsigned long *timing,
 		goto out;
 	/* if link is offline nothing more to do */
 	if (ata_phys_link_offline(link))
+#ifdef CONFIG_CORTINA_GKCI
+		break;
+		if (sata_scr_read(link, SCR_STATUS, &sstatus) == 0 &&
+				sstatus != 0x01 )  {
+			break;
+		}
+
+		--tried_cnt;
+		msleep(800);
+	} while (tried_cnt);
+	if (tried_cnt == 0)
+#endif
 		goto out;
 
 	/* Link is online.  From this point, -ENODEV too is an error. */
@@ -4446,6 +4478,38 @@ static unsigned int ata_dev_set_xfermode(struct ata_device *dev)
 	return err_mask;
 }
 
+#ifdef CONFIG_CORTINA_GKCI
+
+static unsigned int ata_dev_set_feature_timeout(struct ata_device *dev, u8 enable,
+					u8 feature, u16 timeout)
+{
+	struct ata_taskfile tf;
+	unsigned int err_mask;
+
+	/* set up set-features taskfile */
+	DPRINTK("set features - SATA features\n");
+
+	ata_tf_init(dev, &tf);
+	tf.command = ATA_CMD_SET_FEATURES;
+	tf.feature = enable;
+	tf.flags |= ATA_TFLAG_ISADDR | ATA_TFLAG_DEVICE;
+	tf.protocol = ATA_PROT_NODATA;
+	tf.nsect = feature;
+
+
+	err_mask = ata_exec_internal(dev, &tf, NULL, DMA_NONE, NULL, 0, timeout);
+
+	DPRINTK("EXIT, err_mask=%x\n", err_mask);
+	return err_mask;
+}
+
+unsigned int ata_dev_set_feature(struct ata_device *dev, u8 enable, u8 feature)
+{
+	return ata_dev_set_feature_timeout( dev, enable, feature, 0);
+}
+
+#else
+
 /**
  *	ata_dev_set_feature - Issue SET FEATURES - SATA FEATURES
  *	@dev: Device to which command will be sent
@@ -4481,6 +4545,8 @@ unsigned int ata_dev_set_feature(struct ata_device *dev, u8 enable, u8 feature)
 	DPRINTK("EXIT, err_mask=%x\n", err_mask);
 	return err_mask;
 }
+
+#endif
 
 /**
  *	ata_dev_init_params - Issue INIT DEV PARAMS command
@@ -6004,6 +6070,23 @@ int ata_port_probe(struct ata_port *ap)
 	return rc;
 }
 
+#ifdef CONFIG_PM_RUNTIME
+/**
+ *    ata_device_probed - Check if device is probed
+ *    @ap:    port to check
+ */
+static bool ata_device_probed(struct ata_port *ap)
+{
+    struct ata_link *link;
+    struct ata_device *dev;
+
+    ata_for_each_link(link, ap, EDGE)
+        ata_for_each_dev(dev, link, ENABLED)
+            return true;
+
+    return false;
+}
+#endif
 
 static void async_port_probe(void *data, async_cookie_t cookie)
 {
@@ -6024,7 +6107,15 @@ static void async_port_probe(void *data, async_cookie_t cookie)
 	/* in order to keep device order, we need to synchronize at this point */
 	async_synchronize_cookie(cookie);
 
+#ifdef CONFIG_PM_RUNTIME
+	if (ata_device_probed(ap))
+	    ata_scsi_scan_host(ap, 1);
+	else
+	    /* Runtime suspend it if no device is attached */
+	    pm_runtime_idle(&ap->scsi_host->shost_gendev);
+#else
 	ata_scsi_scan_host(ap, 1);
+#endif
 }
 
 /**

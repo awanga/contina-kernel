@@ -71,7 +71,11 @@
 
 /*-------------------------------------------------------------------------*/
 
+#ifdef CONFIG_CORTINA_G2_USB_HOST
+static const char	hcd_name [] = "cs752x_ohci";
+#else
 static const char	hcd_name [] = "ohci_hcd";
+#endif
 
 #define	STATECHANGE_DELAY	msecs_to_jiffies(300)
 
@@ -87,12 +91,14 @@ static int ohci_restart (struct ohci_hcd *ohci);
 #endif
 
 #ifdef CONFIG_PCI
+#ifndef CONFIG_CORTINA_G2_USB_HOST
 static void sb800_prefetch(struct ohci_hcd *ohci, int on);
 #else
 static inline void sb800_prefetch(struct ohci_hcd *ohci, int on)
 {
 	return;
 }
+#endif
 #endif
 
 
@@ -989,9 +995,11 @@ MODULE_AUTHOR (DRIVER_AUTHOR);
 MODULE_DESCRIPTION(DRIVER_DESC);
 MODULE_LICENSE ("GPL");
 
+#ifndef CONFIG_CORTINA_G2_USB_HOST
 #ifdef CONFIG_PCI
 #include "ohci-pci.c"
 #define PCI_DRIVER		ohci_pci_driver
+#endif
 #endif
 
 #if defined(CONFIG_ARCH_SA1100) && defined(CONFIG_SA1111)
@@ -1007,6 +1015,11 @@ MODULE_LICENSE ("GPL");
 #ifdef CONFIG_USB_OHCI_EXYNOS
 #include "ohci-exynos.c"
 #define PLATFORM_DRIVER		exynos_ohci_driver
+#endif
+
+#if defined CONFIG_CORTINA_G2_USB_HOST
+#include "ohci-cs752x.c"
+#define PLATFORM_DRIVER		ohci_hcd_cs752x_driver
 #endif
 
 #ifdef CONFIG_USB_OHCI_HCD_OMAP1

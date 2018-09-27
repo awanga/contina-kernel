@@ -328,6 +328,73 @@ config FB_ARMCLCD
 	  here and read <file:Documentation/kbuild/modules.txt>.  The module
 	  will be called amba-clcd.
 
+config FB_CS752X_CLCD
+	tristate "CS752X color LCD controller"
+	depends on ARCH_GOLDENGATE && FB && ARM
+	select FB_MODE_HELPERS
+	select FB_CFB_FILLRECT
+	select FB_CFB_COPYAREA
+	select FB_CFB_IMAGEBLIT
+	help
+	  This framebuffer device driver is for the ARM PrimeCell PL111
+	  Colour LCD controller.  ARM PrimeCells provide the building
+	  blocks for System on a Chip devices.
+
+choice
+	depends on FB_CS752X_CLCD
+	prompt "CS75XX color LCD panel selection"
+	default HDMI_VIDEO_ANX9805
+
+config PANEL_HX8238A
+	bool "HX8238A panel"
+	depends on ARCH_GOLDENGATE
+	select SPI
+	select SPI_CS75XX
+	help
+	  Say Y here if you have HX8238A hooked to a spi bus.
+
+	  The HX8238A is a controller and driver which can
+	  drive a maximum 320x240 pixel graphics on a TFT
+	  panel displays in 262K colors. It depends on SPI bus.
+
+config HDMI_ANX9805
+	bool "ANX9805 HDMI Transmitter"
+	depends on ARCH_GOLDENGATE && (SOUND_CS75XX_SPDIF || FB_CS752X_CLCD)
+        select I2C
+        select I2C_CS75XX
+	help
+	  Say Y here if you have ANX9805 hooked to a i2c bus.
+
+	  The ANX9805 is a digital video transmitter that supports the HDMI
+	  digital interface. The device is fully compliant to the HDMI 1.3
+	  with HDCP content protection. It depends on I2C bus.
+
+endchoice
+
+config PANEL_HX8238A_TOUCH
+       tristate "HX8238A panel touch support"
+       depends on PANEL_HX8238A
+       select I2C
+       select I2C_CS75XX
+       help
+         Install the driver for the touch device on the HX8238A panel module
+
+config FB_CS752X_CLCD_PINGPONG_BUFFER
+	bool
+	depends on FB_CS752X_CLCD
+	default y
+
+config FB_CS752X_SWAP_HDMI_LANE
+	bool "swap the lane0@anx9805 and lane2"
+	depends on FB_CS752X_CLCD && HDMI_ANX9805
+        default y
+	help
+	  The anx9805 controller supports both DP and DVI mode. In the
+          DP mode, the lanes of anx9805 are directly mapping onto the
+          lanes of hdmi connector; however, in the DVI/HDMI mode, the
+          lane0/2 of anx9805 are mapping onto the lane2/0 of
+          hdmi connector. To support the feature, add this function.
+
 config FB_ACORN
 	bool "Acorn VIDC support"
 	depends on (FB = y) && ARM && ARCH_ACORN

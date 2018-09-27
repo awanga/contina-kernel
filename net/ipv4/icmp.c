@@ -215,6 +215,8 @@ static inline struct sock *icmp_xmit_lock(struct net *net)
 
 	sk = icmp_sk(net);
 
+	spin_lock(&sk->sk_lock.slock);
+#if 0
 	if (unlikely(!spin_trylock(&sk->sk_lock.slock))) {
 		/* This can happen if the output path signals a
 		 * dst_link_failure() for an outgoing ICMP packet.
@@ -222,6 +224,7 @@ static inline struct sock *icmp_xmit_lock(struct net *net)
 		local_bh_enable();
 		return NULL;
 	}
+#endif
 	return sk;
 }
 

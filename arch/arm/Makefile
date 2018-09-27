@@ -91,6 +91,8 @@ tune-$(CONFIG_CPU_FEROCEON)	:=$(call cc-option,-mtune=marvell-f,-mtune=xscale)
 tune-$(CONFIG_CPU_V6)		:=$(call cc-option,-mtune=arm1136j-s,-mtune=strongarm)
 tune-$(CONFIG_CPU_V6K)		:=$(call cc-option,-mtune=arm1136j-s,-mtune=strongarm)
 
+tune-$(CONFIG_ARCH_GOLDENGATE) := -mcpu=cortex-a9 -mtune=cortex-a9 -mfpu=vfpv3-d16
+
 ifeq ($(CONFIG_AEABI),y)
 CFLAGS_ABI	:=-mabi=aapcs-linux -mno-thumb-interwork
 else
@@ -112,9 +114,14 @@ CFLAGS_MODULE	+=-fno-optimize-sibling-calls
 endif
 endif
 
+# -msoft-float
+float_abi-$(CONFIG_BINFMT_FLOAT_ABI_SOFT)   :=-mfloat-abi=soft
+float_abi-$(CONFIG_BINFMT_FLOAT_ABI_SOFTFP) :=-mfloat-abi=softfp
+float_abi-$(CONFIG_BINFMT_FLOAT_ABI_HARD)   :=-mfloat-abi=hard
+
 # Need -Uarm for gcc < 3.x
-KBUILD_CFLAGS	+=$(CFLAGS_ABI) $(CFLAGS_THUMB2) $(arch-y) $(tune-y) $(call cc-option,-mshort-load-bytes,$(call cc-option,-malignment-traps,)) -msoft-float -Uarm
-KBUILD_AFLAGS	+=$(CFLAGS_ABI) $(AFLAGS_THUMB2) $(arch-y) $(tune-y) -include asm/unified.h -msoft-float
+KBUILD_CFLAGS	+=$(CFLAGS_ABI) $(CFLAGS_THUMB2) $(arch-y) $(tune-y) $(call cc-option,-mshort-load-bytes,$(call cc-option,-malignment-traps,))$(float_abi-y) -Uarm
+KBUILD_AFLAGS	+=$(CFLAGS_ABI) $(AFLAGS_THUMB2) $(arch-y) $(tune-y) -include asm/unified.h $(float_abi-y)
 
 CHECKFLAGS	+= -D__arm__
 
@@ -143,6 +150,7 @@ machine-$(CONFIG_ARCH_DOVE)		:= dove
 machine-$(CONFIG_ARCH_EBSA110)		:= ebsa110
 machine-$(CONFIG_ARCH_EP93XX)		:= ep93xx
 machine-$(CONFIG_ARCH_GEMINI)		:= gemini
+machine-$(CONFIG_ARCH_GOLDENGATE)	:= goldengate
 machine-$(CONFIG_ARCH_H720X)		:= h720x
 machine-$(CONFIG_ARCH_HIGHBANK)		:= highbank
 machine-$(CONFIG_ARCH_INTEGRATOR)	:= integrator
@@ -161,6 +169,7 @@ machine-$(CONFIG_ARCH_MV78XX0)		:= mv78xx0
 machine-$(CONFIG_ARCH_IMX_V4_V5)	:= imx
 machine-$(CONFIG_ARCH_IMX_V6_V7)	:= imx
 machine-$(CONFIG_ARCH_MXS)		:= mxs
+machine-$(CONFIG_ARCH_CS_LYNXE)		:= lynxe
 machine-$(CONFIG_ARCH_NETX)		:= netx
 machine-$(CONFIG_ARCH_NOMADIK)		:= nomadik
 machine-$(CONFIG_ARCH_OMAP1)		:= omap1
@@ -253,6 +262,7 @@ core-$(CONFIG_VFP)		+= arch/arm/vfp/
 
 # If we have a machine-specific directory, then include it in the build.
 core-y				+= arch/arm/kernel/ arch/arm/mm/ arch/arm/common/
+core-y				+= arch/arm/crypto/
 core-y				+= arch/arm/net/
 core-y				+= $(machdirs) $(platdirs)
 

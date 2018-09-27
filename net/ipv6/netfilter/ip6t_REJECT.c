@@ -203,6 +203,12 @@ reject_tg6(struct sk_buff *skb, const struct xt_action_param *par)
 	case IP6T_ICMP6_PORT_UNREACH:
 		send_unreach(net, skb, ICMPV6_PORT_UNREACH, par->hooknum);
 		break;
+	case IP6T_ICMP6_POLICY_FAIL:
+		send_unreach(net, skb, ICMPV6_POLICY_FAIL, par->hooknum);
+		break;
+	case IP6T_ICMP6_REJECT_ROUTE:
+		send_unreach(net, skb, ICMPV6_REJECT_ROUTE, par->hooknum);
+		break;
 	case IP6T_ICMP6_ECHOREPLY:
 		/* Do nothing */
 		break;

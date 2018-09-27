@@ -121,6 +121,31 @@ static void csd_lock(struct call_single_data *data)
 	smp_mb();
 }
 
+#ifdef CONFIG_SMP_CORTINA_SOFTIRQ_SAFE_SMP_CALL_FUNCTION_SINGLE
+static unsigned long csd_lock_softirq_safe(struct call_single_data *data)
+{
+	unsigned long flags;
+	for (;;) {
+		csd_lock_wait(data);
+		local_irq_save(flags);
+		if (data->flags & CSD_FLAG_LOCK) {
+			local_irq_restore(flags);
+			continue;
+		}
+		break;
+	}
+	data->flags = CSD_FLAG_LOCK;
+
+	/*
+	 * prevent CPU from reordering the above assignment
+	 * to ->flags with any subsequent assignments to other
+	 * fields of the specified call_single_data structure:
+	 */
+	smp_mb();
+	return flags;
+}
+#endif /* CONFIG_SMP_CORTINA_SOFTIRQ_SAFE_SMP_CALL_FUNCTION_SINGLE */
+
 static void csd_unlock(struct call_single_data *data)
 {
 	WARN_ON(!(data->flags & CSD_FLAG_LOCK));
@@ -167,6 +192,49 @@ void generic_exec_single(int cpu, struct call_single_data *data, int wait)
 	if (wait)
 		csd_lock_wait(data);
 }
+
+#ifdef CONFIG_SMP_CORTINA_SOFTIRQ_SAFE_SMP_CALL_FUNCTION_SINGLE
+/*
+ * Insert a previously allocated call_single_data element
+ * for execution on the given CPU. data must already have
+ * ->func, ->info, and ->flags set.
+ */
+static
+void generic_exec_single_softirq_safe(int cpu, struct call_single_data *data,
+			 smp_call_func_t func, void *info, int wait)
+{
+	struct call_single_queue *dst = &per_cpu(call_single_queue, cpu);
+	int ipi;
+	unsigned long flags = csd_lock_softirq_safe(data);
+
+	data->func = func;
+	data->info = info;
+
+	raw_spin_lock(&dst->lock);
+	ipi = list_empty(&dst->list);
+	list_add_tail(&data->list, &dst->list);
+	raw_spin_unlock(&dst->lock);
+
+	/*
+	 * The list addition should be visible before sending the IPI
+	 * handler locks the list to pull the entry off it because of
+	 * normal cache coherency rules implied by spinlocks.
+	 *
+	 * If IPIs can go out of order to the cache coherency protocol
+	 * in an architecture, sufficient synchronisation should be added
+	 * to arch code to make it appear to obey cache coherency WRT
+	 * locking and barrier primitives. Generic code isn't really
+	 * equipped to do the right thing...
+	 */
+//	if (ipi)
+		arch_send_call_function_single_ipi(cpu);
+
+	local_irq_restore(flags);
+
+	if (wait)
+		csd_lock_wait(data);
+}
+#endif /* CONFIG_SMP_CORTINA_SOFTIRQ_SAFE_SMP_CALL_FUNCTION_SINGLE */
 
 /*
  * Invoked by arch to handle an IPI for call function. Must be called with
@@ -335,11 +403,15 @@ int smp_call_function_single(int cpu, smp_call_func_t func, void *info,
 			if (!wait)
 				data = &__get_cpu_var(csd_data);
 
+#ifndef CONFIG_SMP_CORTINA_SOFTIRQ_SAFE_SMP_CALL_FUNCTION_SINGLE
 			csd_lock(data);
 
 			data->func = func;
 			data->info = info;
 			generic_exec_single(cpu, data, wait);
+#else /* ! CONFIG_SMP_CORTINA_SOFTIRQ_SAFE_SMP_CALL_FUNCTION_SINGLE */
+			generic_exec_single_softirq_safe(cpu, data, func, info, wait);
+#endif /* ! CONFIG_SMP_CORTINA_SOFTIRQ_SAFE_SMP_CALL_FUNCTION_SINGLE */
 		} else {
 			err = -ENXIO;	/* CPU not online */
 		}
@@ -427,8 +499,12 @@ void __smp_call_function_single(int cpu, struct call_single_data *data,
 		data->func(data->info);
 		local_irq_restore(flags);
 	} else {
+#ifndef CONFIG_SMP_CORTINA_SOFTIRQ_SAFE_SMP_CALL_FUNCTION_SINGLE
 		csd_lock(data);
 		generic_exec_single(cpu, data, wait);
+#else /* !CONFIG_SMP_CORTINA_SOFTIRQ_SAFE_SMP_CALL_FUNCTION_SINGLE */
+		generic_exec_single_softirq_safe(cpu, data, data->func, data->info, wait);
+#endif /* ! CONFIG_SMP_CORTINA_SOFTIRQ_SAFE_SMP_CALL_FUNCTION_SINGLE */
 	}
 	put_cpu();
 }
@@ -484,7 +560,11 @@ void smp_call_function_many(const struct cpumask *mask,
 	}
 
 	data = &__get_cpu_var(cfd_data);
+#ifndef  CONFIG_SMP_CORTINA_SOFTIRQ_SAFE_SMP_CALL_FUNCTION_SINGLE
 	csd_lock(&data->csd);
+#else /* ! CONFIG_SMP_CORTINA_SOFTIRQ_SAFE_SMP_CALL_FUNCTION_SINGLE */
+	flags = csd_lock_softirq_safe(&data->csd);
+#endif /* ! CONFIG_SMP_CORTINA_SOFTIRQ_SAFE_SMP_CALL_FUNCTION_SINGLE */
 
 	/* This BUG_ON verifies our reuse assertions and can be removed */
 	BUG_ON(atomic_read(&data->refs) || !cpumask_empty(data->cpumask));
@@ -525,6 +605,9 @@ void smp_call_function_many(const struct cpumask *mask,
 
 	/* Some callers race with other cpus changing the passed mask */
 	if (unlikely(!refs)) {
+#ifdef CONFIG_SMP_CORTINA_SOFTIRQ_SAFE_SMP_CALL_FUNCTION_SINGLE
+		local_irq_restore(flags);
+#endif /* CONFIG_SMP_CORTINA_SOFTIRQ_SAFE_SMP_CALL_FUNCTION_SINGLE */
 		csd_unlock(&data->csd);
 		return;
 	}
@@ -535,7 +618,11 @@ void smp_call_function_many(const struct cpumask *mask,
 	 * a SMP function call, so data->cpumask will be zero.
 	 */
 	cpumask_copy(data->cpumask_ipi, data->cpumask);
+#ifndef CONFIG_SMP_CORTINA_SOFTIRQ_SAFE_SMP_CALL_FUNCTION_SINGLE
 	raw_spin_lock_irqsave(&call_function.lock, flags);
+#else /* ! CONFIG_SMP_CORTINA_SOFTIRQ_SAFE_SMP_CALL_FUNCTION_SINGLE */
+	raw_spin_lock(&call_function.lock);
+#endif /* ! CONFIG_SMP_CORTINA_SOFTIRQ_SAFE_SMP_CALL_FUNCTION_SINGLE */
 	/*
 	 * Place entry at the _HEAD_ of the list, so that any cpu still
 	 * observing the entry in generic_smp_call_function_interrupt()
@@ -548,7 +635,11 @@ void smp_call_function_many(const struct cpumask *mask,
 	 * data is on the list and is ready to be processed.
 	 */
 	atomic_set(&data->refs, refs);
+#ifndef CONFIG_SMP_CORTINA_SOFTIRQ_SAFE_SMP_CALL_FUNCTION_SINGLE
 	raw_spin_unlock_irqrestore(&call_function.lock, flags);
+#else /* ! CONFIG_SMP_CORTINA_SOFTIRQ_SAFE_SMP_CALL_FUNCTION_SINGLE */
+	raw_spin_unlock(&call_function.lock);
+#endif /* ! CONFIG_SMP_CORTINA_SOFTIRQ_SAFE_SMP_CALL_FUNCTION_SINGLE */
 
 	/*
 	 * Make the list addition visible before sending the ipi.
@@ -559,6 +650,9 @@ void smp_call_function_many(const struct cpumask *mask,
 
 	/* Send a message to all CPUs in the map */
 	arch_send_call_function_ipi_mask(data->cpumask_ipi);
+#ifdef CONFIG_SMP_CORTINA_SOFTIRQ_SAFE_SMP_CALL_FUNCTION_SINGLE
+	local_irq_restore(flags);
+#endif /* CONFIG_SMP_CORTINA_SOFTIRQ_SAFE_SMP_CALL_FUNCTION_SINGLE */
 
 	/* Optionally wait for the CPUs to complete */
 	if (wait)

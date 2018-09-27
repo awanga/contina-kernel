@@ -400,8 +400,60 @@ power_attr(pm_trace_dev_match);
 
 #endif /* CONFIG_PM_TRACE */
 
+#ifdef CONFIG_ARCH_GOLDENGATE
+int pm_phy_mode;
+EXPORT_SYMBOL(pm_phy_mode);
+
+#define PM_CONFIG	"pm_config"
+
+#define CS75XX_PM_PHY_MODE_HELP_MSG	\
+	"Purpose: Set PHY mode in system suspend \n" \
+	"READ Usage: cat %s\n" \
+	"Write Usage: echo [bitwise flag] > %s\n" \
+	"flag 0x00000001: USB  PHY 0 power off \n" \
+	"flag 0x00000002: USB  PHY 1 power off \n" \
+	"flag 0x00000010: PCIe PHY 0 power off \n" \
+	"flag 0x00000020: PCIe PHY 1 power off \n" \
+	"flag 0x00000040: PCIe PHY 2 power off \n" \
+	"flag 0x00000080: PCIe PHY 3 power off \n" \
+	"flag 0x00000100: SATA PHY 0 power off \n" \
+	"flag 0x00000200: SATA PHY 1 power off \n" \
+	"flag 0x00000400: SATA PHY 2 power off \n" \
+	"flag 0x00000800: SATA PHY 3 power off \n" \
+	"other values are reserved\n" 
+	
+static ssize_t pm_config_show(struct kobject *kobj, struct kobj_attribute *attr,
+			     char *buf)
+{
+	unsigned int	len = 0;
+	
+	len += sprintf(buf + len, CS75XX_PM_PHY_MODE_HELP_MSG, PM_CONFIG, PM_CONFIG);
+	len += sprintf(buf + len, "\n%s = 0x%08x\n\n", PM_CONFIG, pm_phy_mode);
+	return len;
+}
+
+static ssize_t
+pm_config_store(struct kobject *kobj, struct kobj_attribute *attr,
+	       const char *buf, size_t n)
+{
+	unsigned int val;
+
+	if (strict_strtoul(buf, 0, &val))
+		return -EINVAL;
+
+	pm_phy_mode = val;
+	printk(KERN_WARNING "\nSet %s as 0x%08x\n\n", PM_CONFIG, pm_phy_mode);
+	return n;
+}
+
+power_attr(pm_config);
+#endif /* CONFIG_ARCH_GOLDENGATE */
+
 static struct attribute * g[] = {
 	&state_attr.attr,
+#ifdef CONFIG_ARCH_GOLDENGATE
+	&pm_config_attr.attr,
+#endif /* CONFIG_ARCH_GOLDENGATE */
 #ifdef CONFIG_PM_TRACE
 	&pm_trace_attr.attr,
 	&pm_trace_dev_match_attr.attr,

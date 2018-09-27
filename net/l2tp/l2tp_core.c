@@ -115,6 +115,11 @@ static void l2tp_session_set_header_len(struct l2tp_session *session, int versio
 static void l2tp_tunnel_free(struct l2tp_tunnel *tunnel);
 static void l2tp_tunnel_closeall(struct l2tp_tunnel *tunnel);
 
+#ifdef CONFIG_CS75XX_HW_ACCEL_L2TP_CTRL
+extern int cs_l2tp_ctrl(struct sk_buff *skb, struct l2tp_session *s, unsigned char dir);
+extern void cs_l2tp_free(u32 tid, u32 peer_tid);
+#endif
+
 static inline struct l2tp_net *l2tp_pernet(struct net *net)
 {
 	BUG_ON(!net);
@@ -352,6 +357,14 @@ static void l2tp_recv_dequeue_skb(struct l2tp_session *session, struct sk_buff *
 {
 	struct l2tp_tunnel *tunnel = session->tunnel;
 	int length = L2TP_SKB_CB(skb)->length;
+
+#ifdef CONFIG_CS75XX_HW_ACCEL_L2TP_CTRL
+		/* Cortina Acceleration
+		 * Update cs_cb or redirect a packet to PE if possible */
+		if (cs_l2tp_ctrl(skb, session, 1) == 1) {
+			kfree_skb(skb);
+		}
+#endif
 
 	/* We're about to requeue the skb, so return resources
 	 * to its current owner (a socket receive buffer).
@@ -1039,6 +1052,15 @@ int l2tp_xmit_skb(struct l2tp_session *session, struct sk_buff *skb, int hdr_len
 	int uhlen = (tunnel->encap == L2TP_ENCAPTYPE_UDP) ? sizeof(struct udphdr) : 0;
 	int udp_len;
 
+#ifdef CONFIG_CS75XX_HW_ACCEL_L2TP_CTRL
+	/* Cortina Acceleration
+	 * Update cs_cb or redirect a packet to PE if possible */
+	if (cs_l2tp_ctrl(skb, session, 0) == 1) {
+		dev_kfree_skb(skb);
+		goto abort;
+	}
+#endif
+
 	/* Check that there's enough headroom in the skb to insert IP,
 	 * UDP and L2TP headers. If not enough, expand it to
 	 * make room. Adjust truesize.
@@ -1493,12 +1515,20 @@ EXPORT_SYMBOL_GPL(l2tp_tunnel_delete);
 void l2tp_session_free(struct l2tp_session *session)
 {
 	struct l2tp_tunnel *tunnel;
+#ifdef CONFIG_CS75XX_HW_ACCEL_L2TP_CTRL
+	u32 tunnel_id = 0, peer_tunnel_id = 0;
+#endif
 
 	BUG_ON(atomic_read(&session->ref_count) != 0);
 
 	tunnel = session->tunnel;
 	if (tunnel != NULL) {
 		BUG_ON(tunnel->magic != L2TP_TUNNEL_MAGIC);
+
+#ifdef CONFIG_CS75XX_HW_ACCEL_L2TP_CTRL
+		tunnel_id = tunnel->tunnel_id;
+		peer_tunnel_id = tunnel->peer_tunnel_id;
+#endif
 
 		/* Delete the session from the hash */
 		write_lock_bh(&tunnel->hlist_lock);
@@ -1518,7 +1548,10 @@ void l2tp_session_free(struct l2tp_session *session)
 		if (session->session_id != 0)
 			atomic_dec(&l2tp_session_count);
 
-		sock_put(tunnel->sock);
+#ifdef CONFIG_ARCH_GOLDENGATE
+		if (tunnel->sock)
+#endif /* CONFIG_ARCH_GOLDENGATE */
+			sock_put(tunnel->sock);
 
 		/* This will delete the tunnel context if this
 		 * is the last session on the tunnel.
@@ -1528,6 +1561,13 @@ void l2tp_session_free(struct l2tp_session *session)
 	}
 
 	kfree(session);
+
+#ifdef CONFIG_CS75XX_HW_ACCEL_L2TP_CTRL
+	/* Cortina Acceleration
+	 * Delete HW acceleration according to tid and sid */
+	cs_l2tp_free(tunnel_id, peer_tunnel_id);
+#endif
+	
 
 	return;
 }

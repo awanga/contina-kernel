@@ -217,6 +217,11 @@
 /* Energy Micro efm32 SoC */
 #define PORT_EFMUART   100
 
+#ifdef CONFIG_ARCH_GOLDENGATE
+/* Cortinal GoldenGate UART */
+#define PORT_CORTINA	101
+#endif /* CONFIG_ARCH_GOLDENGATE */
+
 #ifdef __KERNEL__
 
 #include <linux/compiler.h>

@@ -26,6 +26,10 @@
 
 #include "br_private.h"
 
+#ifdef CONFIG_CS752X
+extern int cs_core_vtable_virtual_mac_del_by_dev(char * dev_name);
+#endif
+
 /*
  * Determine initial path cost based on speed.
  * using recommendations from 802.1d standard
@@ -173,6 +177,9 @@ void br_dev_delete(struct net_device *dev, struct list_head *head)
 	br_fdb_delete_by_port(br, NULL, 1);
 
 	del_timer_sync(&br->gc_timer);
+#ifdef CONFIG_CS752X
+	cs_core_vtable_virtual_mac_del_by_dev(br->dev->name);
+#endif
 
 	br_sysfs_delbr(br->dev);
 	unregister_netdevice_queue(br->dev, head);

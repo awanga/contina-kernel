@@ -32,6 +32,28 @@
 #include <linux/gfp.h>
 #include <linux/socket.h>
 
+#ifdef CONFIG_VFS_FASTPATH
+#include <linux/net.h>
+#include "jffs2/nodelist.h"
+/*
+ * G2 fast path support
+ * Samba daemon passes flags to splice indicating if data is sent over G2 fast path.
+ */
+
+#define MAX_PAGES_PER_RECVFILE  16
+#define MSG_KERNSPACE                   0x10000
+#define MSG_NOCATCHSIGNAL               0x20000
+
+static int pipe_to_sendpages(struct pipe_inode_info *pipe,
+                            struct pipe_buffer *buf, struct splice_desc *sd);
+static ssize_t do_splice_from_socket(struct file *file, struct socket *sock,
+                                loff_t __user *ppos,size_t count);
+
+extern u32 cs_ni_use_sendfile;
+extern ssize_t sock_sendpages(struct file *file, struct pipe_inode_info *pipe,
+                                int offset, size_t size, loff_t *ppos, int more);
+#endif
+
 /*
  * Attempt to steal a page from a pipe buffer. This should perhaps go into
  * a vm helper function, it's already simplified quite a bit by the
@@ -794,6 +816,83 @@ int splice_from_pipe_feed(struct pipe_inode_info *pipe, struct splice_desc *sd,
 {
 	int ret;
 
+#ifdef CONFIG_VFS_FASTPATH
+
+        if (actor == pipe_to_sendpages){
+                struct pipe_buffer *buf = pipe->bufs + pipe->curbuf;
+                const struct pipe_buf_operations *ops = buf->ops;
+
+                if (sd->total_len) {
+                        ret = actor(pipe, buf, sd);
+                        if (ret <= 0) {
+                                if (ret == -ENODATA)
+                                        ret = 0;
+                                return ret;
+                        }
+
+                        while (ret >= buf->len){
+                                ret -= buf->len;
+                                ops  = buf->ops;
+                                buf->ops = NULL;
+                                ops->release(pipe, buf);
+
+                                pipe->curbuf = (pipe->curbuf + 1) & (pipe->buffers - 1);
+                                pipe->nrbufs--;
+                                if (ret==0)
+                                        break;
+
+                                buf = pipe->bufs + pipe->curbuf;
+                        }
+                        if (ret){
+                                buf->offset += ret;
+                                buf->len -= ret;
+                        }
+
+                        if (pipe->inode)
+                                sd->need_wakeup = true;
+
+                        if (!sd->total_len)
+                                return 0;
+                }
+        }
+        else {
+                while (pipe->nrbufs) {
+                        struct pipe_buffer *buf = pipe->bufs + pipe->curbuf;
+                        const struct pipe_buf_operations *ops = buf->ops;
+
+                        sd->len = buf->len;
+                        if (sd->len > sd->total_len)
+				sd->len = sd->total_len;
+
+                        ret = actor(pipe, buf, sd);
+                        if (ret <= 0) {
+                                if (ret == -ENODATA)
+                                        ret = 0;
+                                return ret;
+                        }
+                        buf->offset += ret;
+                        buf->len -= ret;
+
+                        sd->num_spliced += ret;
+                        sd->len -= ret;
+                        sd->pos += ret;
+                        sd->total_len -= ret;
+
+                        if (!buf->len) {
+                                buf->ops = NULL;
+                                ops->release(pipe, buf);
+                                pipe->curbuf = (pipe->curbuf + 1) & (pipe->buffers - 1);
+                                pipe->nrbufs--;
+                                if (pipe->inode)
+                                        sd->need_wakeup = true;
+                        }
+                        if (!sd->total_len)
+                        return 0;
+                }
+        }
+
+#else
+
 	while (pipe->nrbufs) {
 		struct pipe_buffer *buf = pipe->bufs + pipe->curbuf;
 		const struct pipe_buf_operations *ops = buf->ops;
@@ -833,6 +932,7 @@ int splice_from_pipe_feed(struct pipe_inode_info *pipe, struct splice_desc *sd,
 		if (!sd->total_len)
 			return 0;
 	}
+#endif
 
 	return 1;
 }
@@ -1082,6 +1182,12 @@ static ssize_t default_file_splice_write(struct pipe_inode_info *pipe,
 ssize_t generic_splice_sendpage(struct pipe_inode_info *pipe, struct file *out,
 				loff_t *ppos, size_t len, unsigned int flags)
 {
+#ifdef CONFIG_VFS_FASTPATH
+        if (cs_ni_use_sendfile)
+        {
+                return splice_from_pipe(pipe, out, ppos, len, flags, pipe_to_sendpages);
+        }
+#endif
 	return splice_from_pipe(pipe, out, ppos, len, flags, pipe_to_sendpage);
 }
 
@@ -1693,11 +1799,52 @@ SYSCALL_DEFINE6(splice, int, fd_in, loff_t __user *, off_in,
 	long error;
 	struct file *in, *out;
 	int fput_in, fput_out;
+#ifdef CONFIG_VFS_FASTPATH
+        struct socket *sock = NULL;
+        struct address_space *mapping;
+        int run_normal;
+#endif
 
 	if (unlikely(!len))
 		return 0;
 
 	error = -EBADF;
+#ifdef CONFIG_VFS_FASTPATH
+        if ((flags & SPLICE_F_G2_FASTPATH )) {
+                run_normal =0 ;
+                sock = sockfd_lookup(fd_in, (int *)&error);
+                if(sock){
+                        out = NULL;
+                        if(!sock->sk)
+                                goto done;
+
+                        out = fget_light(fd_out, &fput_out);
+                        if (out) {
+                                if (!(out->f_mode & FMODE_WRITE))
+                                        goto done;
+                                mapping = out->f_mapping;
+                                if( mapping->a_ops == &jffs2_file_address_operations ) {
+                                        run_normal= 1;
+                                        goto done;
+                                }
+
+                                error = do_splice_from_socket(out, sock, off_out,len);
+                        }
+done:
+                        if(out)
+                                fput_light(out, fput_out);
+                        fput(sock->file);
+
+                        if ( run_normal == 1 )
+			{
+				goto splice_normal;
+			}
+                }
+        }
+        else {
+splice_normal:
+#endif
+
 	in = fget_light(fd_in, &fput_in);
 	if (in) {
 		if (in->f_mode & FMODE_READ) {
@@ -1713,6 +1860,9 @@ SYSCALL_DEFINE6(splice, int, fd_in, loff_t __user *, off_in,
 
 		fput_light(in, fput_in);
 	}
+#ifdef CONFIG_VFS_FASTPATH
+        }
+#endif
 
 	return error;
 }
@@ -2048,3 +2198,180 @@ SYSCALL_DEFINE4(tee, int, fdin, int, fdout, size_t, len, unsigned int, flags)
 
 	return error;
 }
+
+#ifdef CONFIG_VFS_FASTPATH
+/* G2 fast path implementation */
+
+static int pipe_to_sendpages(struct pipe_inode_info *pipe,
+                            struct pipe_buffer *buf, struct splice_desc *sd)
+{
+        struct pipe_buffer *tmp = buf;  // current buffer
+        struct file *file = sd->u.file;
+        loff_t pos = sd->pos;
+        int ret, more;
+        int i;
+
+        for(i=0; i< pipe->nrbufs; i++){
+                ret = tmp->ops->confirm(pipe, tmp);
+                if (ret) {
+                        printk(KERN_ERR "%s confirm err=%d\n", __func__, ret);
+                        return ret;
+                }
+
+                tmp ++;
+        }
+
+        sd->len = sd->total_len;
+        more = (sd->flags & SPLICE_F_MORE) || sd->len < sd->total_len;
+        ret = sock_sendpages(file, pipe, buf->offset, sd->len, &pos, more);
+
+        if (ret < 0) return ret;
+
+        sd->num_spliced += ret;
+        sd->len -= ret;
+        sd->pos += ret;
+        sd->total_len -= ret;
+
+        return ret;
+}
+
+#include <net/sock.h>
+struct RECV_FILE_CONTROL_BLOCK
+{
+    struct page *rv_page;
+    loff_t rv_pos;
+    size_t rv_count;
+    void *rv_fsdata;
+};
+
+static ssize_t do_splice_from_socket(struct file *file, struct socket *sock,loff_t __user *ppos,size_t count)
+{
+    struct address_space *mapping = file->f_mapping;
+    struct inode        *inode = mapping->host;
+    loff_t pos;
+    int count_tmp;
+    int err = 0;
+    int cPagePtr = 0;
+    int cPagesAllocated = 0;
+    struct RECV_FILE_CONTROL_BLOCK rv_cb[MAX_PAGES_PER_RECVFILE + 1];
+    struct kvec iov[MAX_PAGES_PER_RECVFILE + 1];
+    struct msghdr msg;
+    long rcvtimeo;
+    int ret;
+
+    if(copy_from_user(&pos, ppos, sizeof(loff_t)))
+        return -EFAULT;
+
+    if(count > MAX_PAGES_PER_RECVFILE * PAGE_SIZE){
+        printk("%s: %d: %s:count(%d) exceed maxinum\n",__FILE__,__LINE__,__func__,count);
+        return -EINVAL;
+    }
+    mutex_lock(&inode->i_mutex);
+
+    vfs_check_frozen(inode->i_sb, SB_FREEZE_WRITE);
+
+    /* We can write back this queue in page reclaim */
+    current->backing_dev_info = mapping->backing_dev_info;
+
+    err = generic_write_checks(file, &pos, &count, S_ISBLK(inode->i_mode));
+    if (err != 0 || count == 0)
+        goto done;
+
+    file_remove_suid(file);
+    file_update_time(file);
+
+    count_tmp = count;
+    do {
+        unsigned long bytes;    /* Bytes to write to page */
+        unsigned long offset;   /* Offset into pagecache page */
+        struct page *pageP;
+        void *fsdata;
+
+        offset = (pos & (PAGE_CACHE_SIZE - 1));
+        bytes = PAGE_CACHE_SIZE - offset;
+        if (bytes > count_tmp)
+                bytes = count_tmp;
+
+        ret =  mapping->a_ops->write_begin(file, mapping, pos, bytes, AOP_FLAG_UNINTERRUPTIBLE,&pageP,&fsdata);
+
+        if (unlikely(ret)){
+            err = ret;
+            //-ENOSPC:No space left on device maybe happen
+            //                  printk("%s: %d: %s: error:%d\n",__FILE__,__LINE__,__func__,err);
+            for(cPagePtr = 0; cPagePtr < cPagesAllocated; cPagePtr++){
+                kunmap(rv_cb[cPagePtr].rv_page);
+                ret = mapping->a_ops->write_end(file, mapping, rv_cb[cPagePtr].rv_pos, rv_cb[cPagePtr].rv_count, rv_cb[cPagePtr].rv_count,
+                rv_cb[cPagePtr].rv_page, rv_cb[cPagePtr].rv_fsdata);
+            }
+            goto done;
+        }
+        rv_cb[cPagesAllocated].rv_page = pageP;
+        rv_cb[cPagesAllocated].rv_pos = pos;
+        rv_cb[cPagesAllocated].rv_count = bytes;
+        rv_cb[cPagesAllocated].rv_fsdata = fsdata;
+        iov[cPagesAllocated].iov_base = kmap(pageP) + offset;
+        iov[cPagesAllocated].iov_len = bytes;
+        cPagesAllocated++;
+        count_tmp -= bytes;
+        pos += bytes;
+    } while (count_tmp);
+
+    /* IOV is ready, receive the date from socket now */
+    msg.msg_name = NULL;
+    msg.msg_namelen = 0;
+    msg.msg_iov = (struct iovec *)&iov[0];
+    msg.msg_iovlen = cPagesAllocated ;
+    msg.msg_control = NULL;
+    msg.msg_controllen = 0;
+    msg.msg_flags = MSG_KERNSPACE;
+    rcvtimeo = sock->sk->sk_rcvtimeo;
+    sock->sk->sk_rcvtimeo = 3 * HZ;
+
+    ret = kernel_recvmsg(sock, &msg, &iov[0], cPagesAllocated, count, MSG_WAITALL | MSG_NOCATCHSIGNAL);
+//      printk("%s::request %d, recv size %d\n", __func__, count, ret);
+    sock->sk->sk_rcvtimeo = rcvtimeo;
+    if(unlikely(ret < 0)){
+        err = ret;
+//        printk("%s: %d: %s: kernel_recvmsg error,estimate %d,real %d\n",__FILE__,__LINE__,__func__,count,err);
+        for(cPagePtr = 0; cPagePtr < cPagesAllocated; cPagePtr++){
+            kunmap(rv_cb[cPagePtr].rv_page);
+            ret = mapping->a_ops->write_end(file, mapping, rv_cb[cPagePtr].rv_pos, rv_cb[cPagePtr].rv_count, rv_cb[cPagePtr].rv_count,
+            rv_cb[cPagePtr].rv_page, rv_cb[cPagePtr].rv_fsdata);
+        }
+        goto done;
+    }
+    else{
+        err = 0;
+//        if(ret != count)
+//            printk("%s: %d: %s: kernel_recvmsg error,estimate %d,real %d\n",__FILE__,__LINE__,__func__,count,ret);
+        pos = pos - count + ret;
+        count = ret;
+    }
+
+    for(cPagePtr=0;cPagePtr < cPagesAllocated;cPagePtr++){
+    //          flush_dcache_page(pageP);
+        kunmap(rv_cb[cPagePtr].rv_page);
+        ret = mapping->a_ops->write_end(file, mapping, rv_cb[cPagePtr].rv_pos, rv_cb[cPagePtr].rv_count, rv_cb[cPagePtr].rv_count,
+        rv_cb[cPagePtr].rv_page, rv_cb[cPagePtr].rv_fsdata);
+
+        if (unlikely(ret < 0))
+            printk("%s: %d: %s: write_end fail,ret = %d\n",__FILE__,__LINE__,__func__,ret);
+        //              cond_resched();
+    }
+    balance_dirty_pages_ratelimited_nr(mapping, cPagesAllocated);
+    copy_to_user(ppos,&pos,sizeof(loff_t));
+
+done:
+    current->backing_dev_info = NULL;
+    mutex_unlock(&inode->i_mutex);
+
+
+    if(err)
+        return err;
+    else
+        return count;
+}
+
+/* end */
+#endif
+

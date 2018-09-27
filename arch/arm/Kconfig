@@ -3,6 +3,7 @@ config ARM
 	default y
 	select HAVE_DMA_API_DEBUG
 	select HAVE_IDE if PCI || ISA || PCMCIA
+	select HAVE_DMA_ATTRS
 	select HAVE_MEMBLOCK
 	select RTC_LIB
 	select SYS_SUPPORTS_APM_EMULATION
@@ -33,6 +34,8 @@ config ARM
 	select CPU_PM if (SUSPEND || CPU_IDLE)
 	select GENERIC_PCI_IOMAP
 	select HAVE_BPF_JIT if NET
+	select HAVE_MOD_ARCH_SPECIFIC if ARM_UNWIND
+	select MODULES_USE_ELF_REL
 	help
 	  The ARM series is a line of low-power-consumption RISC chip designs
 	  licensed by ARM Ltd and targeted at embedded applications and
@@ -398,6 +401,24 @@ config ARCH_GEMINI
 	help
 	  Support for the Cortina Systems Gemini family SoCs
 
+config ARCH_GOLDENGATE
+	bool "Cortina-systems Golden-Gate Platform"
+	select GENERIC_TIME
+	select CLKDEV_LOOKUP
+	select ARM_AMBA
+	select COMMON_CLKDEV
+	select GENERIC_CLOCKEVENTS
+	select ARCH_WANT_OPTIONAL_GPIOLIB
+	select MULTI_IRQ_HANDLER
+	select HAVE_SMP
+	select MIGHT_HAVE_CACHE_L2X0
+	select MIGHT_HAVE_PCI
+	select ARCH_HAS_CPUFREQ
+	help
+		This enables support for Cortina-Systems Golden-Gate platform.
+		ARM core: Cortex-A9-r2p7
+		L2 Cache : PL310-r3p1
+
 config ARCH_PRIMA2
 	bool "CSR SiRFSoC PRIMA2 ARM Cortex A9 Platform"
 	select CPU_V7
@@ -460,6 +481,14 @@ config ARCH_MXC
 	select MULTI_IRQ_HANDLER
 	help
 	  Support for Freescale MXC/iMX-based family of processors
+
+config ARCH_CS_LYNXE
+	bool "Cortina Systems LynxE"
+	select CPU_V6
+	select CPU_32v6
+	select ARCH_USES_GETTIMEOFFSET
+	help
+	  Support for Cortina's LynxE Platform
 
 config ARCH_MXS
 	bool "Freescale MXS-based"
@@ -1034,6 +1063,8 @@ source "arch/arm/mach-footbridge/Kconfig"
 
 source "arch/arm/mach-gemini/Kconfig"
 
+source "arch/arm/mach-goldengate/Kconfig"
+
 source "arch/arm/mach-h720x/Kconfig"
 
 source "arch/arm/mach-integrator/Kconfig"
@@ -1113,6 +1144,8 @@ source "arch/arm/mach-exynos/Kconfig"
 source "arch/arm/mach-shmobile/Kconfig"
 
 source "arch/arm/mach-tegra/Kconfig"
+
+source "arch/arm/mach-lynxe/Kconfig"
 
 source "arch/arm/mach-u300/Kconfig"
 
@@ -1405,6 +1438,30 @@ config PL310_ERRATA_769419
 	  on systems with an outer cache, the store buffer is drained
 	  explicitly.
 
+# added by whsu 03/02/2012
+config ARM_ERRATA_761320
+	bool "ARM ACP errata: ACP request possibly lead to deadlock"
+	depends on CPU_V7 && SMP
+	help
+	  Full cache line writes from 2 processors or more may interfere
+	  with ACP requests, possibly leading to deadlock.
+	  Under very rare circumstances, some ACP requests in hazard with
+	  full cache line writes from (at least) 2 processors may cause
+	  arbitration issues in the SCU, leading to processor deadlock.
+
+# added by jason 04/12/2012
+config PL310_ERRATA_780370
+	bool "PL310 errata: Data corrupt due to parity errors were incorrectly sampled by the eviction buffer"
+	depends on CACHE_PL310
+	help
+	  The PL310 L2 cache controller implements error logic to indicate
+	  errors have occurred when accessing the L2 cache RAM array.
+	  When an eviction is handled by the PL310 eviction buffer, both Tag
+	  and Data RAMs are accessed to get the whole eviction information.
+	  Due to this erratum, the eviction buffer can incorrectly sample
+	  error information. As a result, an eviction can be wrongly cancelled
+	  and dirty data can be lost, leading to data corruption.
+
 config ARM_ERRATA_775420
        bool "ARM errata: A data cache maintenance operation which aborts, might lead to deadlock"
        depends on CPU_V7
@@ -1561,6 +1618,13 @@ config HAVE_ARM_SCU
 	bool
 	help
 	  This option enables support for the ARM system coherency unit
+
+config SMP_CORTINA_SOFTIRQ_SAFE_SMP_CALL_FUNCTION_SINGLE
+	bool "Allow smp_call_function_single func call from softirq context (EXPERIMENTAL)"
+	depends on SMP
+	help
+	 This option enables support for calling smp_call_function_single()
+	 from softirq context.
 
 config HAVE_ARM_TWD
 	bool

@@ -123,6 +123,17 @@ static long compat_sock_ioctl(struct file *file,
 static int sock_fasync(int fd, struct file *filp, int on);
 static ssize_t sock_sendpage(struct file *file, struct page *page,
 			     int offset, size_t size, loff_t *ppos, int more);
+
+#ifdef CONFIG_VFS_FASTPATH
+/* G2 fast path implementation */
+ssize_t sock_sendpages(struct file *file, struct pipe_inode_info *pipe,
+				int offset, size_t size, loff_t *ppos, int more);
+static int kernel_sendpages(struct socket *sock, struct pipe_inode_info *pipe, int offset,
+		    size_t size, int flags);
+extern ssize_t inet_sendpages(struct socket *sock, struct pipe_inode_info *pipe, int offset,
+		      size_t size, int flags);
+/* end */
+#endif
 static ssize_t sock_splice_read(struct file *file, loff_t *ppos,
 				struct pipe_inode_info *pipe, size_t len,
 				unsigned int flags);
@@ -3429,3 +3440,33 @@ int kernel_sock_shutdown(struct socket *sock, enum sock_shutdown_cmd how)
 	return sock->ops->shutdown(sock, how);
 }
 EXPORT_SYMBOL(kernel_sock_shutdown);
+
+#ifdef CONFIG_VFS_FASTPATH
+/* G2 fast path implementation */
+
+static int kernel_sendpages(struct socket *sock, struct pipe_inode_info *pipe, int offset,
+		    size_t size, int flags)
+{
+	sock_update_classid(sock->sk);
+	return inet_sendpages(sock, pipe, offset, size, flags);
+}
+
+ssize_t sock_sendpages(struct file *file, struct pipe_inode_info *pipe,
+				int offset, size_t size, loff_t *ppos, int more)
+
+{
+	struct socket *sock;
+	int flags;
+
+	sock = file->private_data;
+	flags = !(file->f_flags & O_NONBLOCK) ? 0 : MSG_DONTWAIT;
+	if (more)
+		flags |= MSG_MORE;
+
+	return kernel_sendpages(sock, pipe, offset, size, flags);
+}
+
+EXPORT_SYMBOL(sock_sendpages);
+
+/* end */
+#endif

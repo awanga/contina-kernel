@@ -14,6 +14,10 @@
 
 #include <linux/kmemleak.h>
 
+#if defined(CONFIG_SLUB_DEBUG) || defined(CONFIG_SLABINFO) || 1
+#define SLUB_DEBUG_FULL_COUNTS
+#endif
+
 enum stat_item {
 	ALLOC_FASTPATH,		/* Allocation from cpu slab */
 	ALLOC_SLOWPATH,		/* Allocation by getting a new cpu slab */
@@ -58,9 +62,11 @@ struct kmem_cache_node {
 	spinlock_t list_lock;	/* Protect partial list and nr_partial */
 	unsigned long nr_partial;
 	struct list_head partial;
-#ifdef CONFIG_SLUB_DEBUG
+#ifdef SLUB_DEBUG_FULL_COUNTS
 	atomic_long_t nr_slabs;
 	atomic_long_t total_objects;
+#endif
+#ifdef CONFIG_SLUB_DEBUG
 	struct list_head full;
 #endif
 };

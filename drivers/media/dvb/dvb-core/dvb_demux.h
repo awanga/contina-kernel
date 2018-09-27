@@ -113,7 +113,11 @@ struct dvb_demux {
 			 const u8 *src, size_t len);
 
 	int users;
+#if defined(CONFIG_DVB_CS75XX_TS) || defined(CONFIG_DVB_CS75XX_TS_MODULE)
+#define MAX_DVB_DEMUX_USERS 12 
+#else
 #define MAX_DVB_DEMUX_USERS 10
+#endif
 	struct dvb_demux_filter *filter;
 	struct dvb_demux_feed *feed;
 

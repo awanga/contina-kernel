@@ -22,6 +22,11 @@
 
 #include "br_private.h"
 
+#ifdef CONFIG_BRIDGE_PKT_FWD_FILTER
+extern int br_pkt_fwd_filter_register(void);
+extern int br_pkt_fwd_filter_deregister(void);
+#endif
+
 static const struct stp_proto br_stp_proto = {
 	.rcv	= br_stp_rcv,
 };
@@ -66,6 +71,12 @@ static int __init br_init(void)
 	br_fdb_test_addr_hook = br_fdb_test_addr;
 #endif
 
+#ifdef CONFIG_BRIDGE_PKT_FWD_FILTER
+	err = br_pkt_fwd_filter_register();
+	if (err)
+		goto err_out4;
+#endif
+
 	return 0;
 err_out4:
 	unregister_netdevice_notifier(&br_device_notifier);
@@ -82,6 +93,10 @@ err_out:
 
 static void __exit br_deinit(void)
 {
+#ifdef CONFIG_BRIDGE_PKT_FWD_FILTER
+	br_pkt_fwd_filter_deregister();
+#endif
+
 	stp_proto_unregister(&br_stp_proto);
 
 	br_netlink_fini();

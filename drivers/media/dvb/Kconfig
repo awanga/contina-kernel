@@ -72,6 +72,10 @@ comment "Supported Earthsoft PT1 Adapters"
 	depends on DVB_CORE && PCI && I2C
 source "drivers/media/dvb/pt1/Kconfig"
 
+comment "Supported CS75XX Transport Stream"
+	depends on ARCH_GOLDENGATE && DVB_CORE
+source "drivers/media/dvb/cs752x-ts/Kconfig"
+
 comment "Supported Mantis Adapters"
 	depends on DVB_CORE && PCI && I2C
 	source "drivers/media/dvb/mantis/Kconfig"

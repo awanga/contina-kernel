@@ -1247,6 +1247,43 @@ static inline unsigned long kmem_cache_flags(unsigned long objsize,
 
 #define disable_higher_order_debug 0
 
+#ifdef SLUB_DEBUG_FULL_COUNTS /* FK */
+
+static inline unsigned long slabs_node(struct kmem_cache *s, int node)
+{
+	struct kmem_cache_node *n = get_node(s, node);
+	return atomic_long_read(&n->nr_slabs);
+}
+
+static inline unsigned long node_nr_slabs(struct kmem_cache_node *n)
+{
+	return atomic_long_read(&n->nr_slabs);
+}
+
+static inline void inc_slabs_node(struct kmem_cache *s, int node, int objects)
+{
+	struct kmem_cache_node *n = get_node(s, node);
+	/*
+	 * May be called early in order to allocate a slab for the
+	 * kmem_cache_node structure. Solve the chicken-egg
+	 * dilemma by deferring the increment of the count during
+	 * bootstrap (see early_kmem_cache_node_alloc).
+	 */
+	if (n) {
+		atomic_long_inc(&n->nr_slabs);
+		atomic_long_add(objects, &n->total_objects);
+	}
+}
+
+static inline void dec_slabs_node(struct kmem_cache *s, int node, int objects)
+{
+	struct kmem_cache_node *n = get_node(s, node);
+	atomic_long_dec(&n->nr_slabs);
+	atomic_long_sub(objects, &n->total_objects);
+}
+
+#else
+
 static inline unsigned long slabs_node(struct kmem_cache *s, int node)
 							{ return 0; }
 static inline unsigned long node_nr_slabs(struct kmem_cache_node *n)
@@ -1255,6 +1292,7 @@ static inline void inc_slabs_node(struct kmem_cache *s, int node,
 							int objects) {}
 static inline void dec_slabs_node(struct kmem_cache *s, int node,
 							int objects) {}
+#endif
 
 static inline int slab_pre_alloc_hook(struct kmem_cache *s, gfp_t flags)
 							{ return 0; }
@@ -2085,7 +2123,7 @@ static unsigned long count_partial(struct kmem_cache_node *n,
 
 static inline unsigned long node_nr_objs(struct kmem_cache_node *n)
 {
-#ifdef CONFIG_SLUB_DEBUG
+#ifdef SLUB_DEBUG_FULL_COUNTS
 	return atomic_long_read(&n->total_objects);
 #else
 	return 0;
@@ -2774,9 +2812,11 @@ init_kmem_cache_node(struct kmem_cache_node *n, struct kmem_cache *s)
 	n->nr_partial = 0;
 	spin_lock_init(&n->list_lock);
 	INIT_LIST_HEAD(&n->partial);
-#ifdef CONFIG_SLUB_DEBUG
+#ifdef SLUB_DEBUG_FULL_COUNTS
 	atomic_long_set(&n->nr_slabs, 0);
 	atomic_long_set(&n->total_objects, 0);
+#endif
+#ifdef CONFIG_SLUB_DEBUG
 	INIT_LIST_HEAD(&n->full);
 #endif
 }
@@ -4535,7 +4575,7 @@ static ssize_t show_slab_objects(struct kmem_cache *s,
 	}
 
 	lock_memory_hotplug();
-#ifdef CONFIG_SLUB_DEBUG
+#ifdef SLUB_DEBUG_FULL_COUNTS
 	if (flags & SO_ALL) {
 		for_each_node_state(node, N_NORMAL_MEMORY) {
 			struct kmem_cache_node *n = get_node(s, node);
@@ -4815,7 +4855,7 @@ static ssize_t reserved_show(struct kmem_cache *s, char *buf)
 }
 SLAB_ATTR_RO(reserved);
 
-#ifdef CONFIG_SLUB_DEBUG
+#ifdef SLUB_DEBUG_FULL_COUNTS
 static ssize_t slabs_show(struct kmem_cache *s, char *buf)
 {
 	return show_slab_objects(s, buf, SO_ALL);
@@ -4827,7 +4867,9 @@ static ssize_t total_objects_show(struct kmem_cache *s, char *buf)
 	return show_slab_objects(s, buf, SO_ALL|SO_TOTAL);
 }
 SLAB_ATTR_RO(total_objects);
+#endif
 
+#ifdef CONFIG_SLUB_DEBUG
 static ssize_t sanity_checks_show(struct kmem_cache *s, char *buf)
 {
 	return sprintf(buf, "%d\n", !!(s->flags & SLAB_DEBUG_FREE));
@@ -5122,9 +5164,11 @@ static struct attribute *slab_attrs[] = {
 	&shrink_attr.attr,
 	&reserved_attr.attr,
 	&slabs_cpu_partial_attr.attr,
-#ifdef CONFIG_SLUB_DEBUG
+#ifdef SLUB_DEBUG_FULL_COUNTS
 	&total_objects_attr.attr,
 	&slabs_attr.attr,
+#endif
+#ifdef CONFIG_SLUB_DEBUG
 	&sanity_checks_attr.attr,
 	&trace_attr.attr,
 	&red_zone_attr.attr,

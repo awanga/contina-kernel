@@ -47,6 +47,12 @@
 #include <net/netfilter/nf_conntrack_timeout.h>
 #include <net/netfilter/nf_nat.h>
 #include <net/netfilter/nf_nat_core.h>
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+#include <mach/cs_kernel_hook_api.h>
+#endif
+#ifdef CONFIG_CS752X_ACCEL_KERNEL
+extern void cs_hw_accel_forward_delete_ct_hash(struct nf_conn *ct);
+#endif
 
 #define NF_CONNTRACK_VERSION	"0.5.0"
 
@@ -194,6 +200,42 @@ destroy_conntrack(struct nf_conntrack *nfct)
 	struct net *net = nf_ct_net(ct);
 	struct nf_conntrack_l4proto *l4proto;
 
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+	struct nf_conntrack_tuple *tuple;
+
+	tuple = &(ct->tuplehash[0].tuple);
+	if (cs_kernel_hook_ops.kho_bypass_tcp_portlist_delete != NULL) {
+		if (tuple->src.u.all != 0)
+			cs_kernel_hook_ops.kho_bypass_tcp_portlist_delete(0, ntohs(tuple->src.u.all), CS_BYPASS_CNT_INVALID);
+
+		if (tuple->dst.u.all != 0)
+			cs_kernel_hook_ops.kho_bypass_tcp_portlist_delete(0, ntohs(tuple->dst.u.all), CS_BYPASS_CNT_INVALID);
+	}
+
+	tuple = &(ct->tuplehash[1].tuple);
+	if (tuple != NULL) {
+		if (cs_kernel_hook_ops.kho_bypass_tcp_portlist_delete != NULL) {
+			if (tuple->src.u.all != 0)
+				cs_kernel_hook_ops.kho_bypass_tcp_portlist_delete(0, ntohs(tuple->src.u.all), CS_BYPASS_CNT_INVALID);
+
+			if (tuple->dst.u.all != 0)
+				cs_kernel_hook_ops.kho_bypass_tcp_portlist_delete(0, ntohs(tuple->dst.u.all), CS_BYPASS_CNT_INVALID);
+		}
+	}
+
+	if (test_bit(IPS_SRC_NAT_DONE_BIT, &ct->status) || test_bit(IPS_DST_NAT_DONE_BIT, &ct->status)) {
+		tuple = &(ct->tuplehash[0].tuple);
+		if (cs_kernel_hook_ops.kho_nat_entry_session_delete != NULL)
+			cs_kernel_hook_ops.kho_nat_entry_session_delete(0, tuple->dst.protonum, tuple->src.u3.ip, tuple->dst.u3.ip, tuple->src.u.all, tuple->dst.u.all);
+
+		tuple = &(ct->tuplehash[1].tuple);
+		if (tuple != NULL) {
+			if (cs_kernel_hook_ops.kho_nat_entry_session_delete != NULL)
+				cs_kernel_hook_ops.kho_nat_entry_session_delete(0, tuple->dst.protonum, tuple->src.u3.ip, tuple->dst.u3.ip, tuple->src.u.all, tuple->dst.u.all);
+		}
+	}
+#endif
+
 	pr_debug("destroy_conntrack(%p)\n", ct);
 	NF_CT_ASSERT(atomic_read(&nfct->use) == 0);
 	NF_CT_ASSERT(!timer_pending(&ct->timeout));
@@ -235,6 +277,9 @@ void nf_ct_delete_from_lists(struct nf_conn *ct)
 {
 	struct net *net = nf_ct_net(ct);
 
+#ifdef CONFIG_CS752X_ACCEL_KERNEL
+	cs_hw_accel_forward_delete_ct_hash(ct);
+#endif
 	nf_ct_helper_destroy(ct);
 	spin_lock_bh(&nf_conntrack_lock);
 	/* Inside lock so preempt is disabled on module removal path.
@@ -288,10 +333,49 @@ void nf_ct_insert_dying_list(struct nf_conn *ct)
 }
 EXPORT_SYMBOL_GPL(nf_ct_insert_dying_list);
 
+#ifndef CONFIG_CS752X_ACCEL_KERNEL
 static void death_by_timeout(unsigned long ul_conntrack)
+#else /* CONFIG_CS752X_ACCEL_KERNEL */
+void death_by_timeout(unsigned long ul_conntrack)
+#endif /* CONFIG_CS752X_ACCEL_KERNEL */
 {
 	struct nf_conn *ct = (void *)ul_conntrack;
 	struct nf_conn_tstamp *tstamp;
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+	struct nf_conntrack_tuple *tuple;
+
+	tuple = &(ct->tuplehash[0].tuple);
+	if (cs_kernel_hook_ops.kho_bypass_tcp_portlist_delete != NULL) {
+		if (tuple->src.u.all != 0)
+			cs_kernel_hook_ops.kho_bypass_tcp_portlist_delete(0, ntohs(tuple->src.u.all), CS_BYPASS_CNT_INVALID);
+
+		if (tuple->dst.u.all != 0)
+			cs_kernel_hook_ops.kho_bypass_tcp_portlist_delete(0, ntohs(tuple->dst.u.all), CS_BYPASS_CNT_INVALID);
+	}
+
+	tuple = &(ct->tuplehash[1].tuple);
+	if (tuple != NULL) {
+		if (cs_kernel_hook_ops.kho_bypass_tcp_portlist_delete != NULL) {
+			if (tuple->src.u.all != 0)
+				cs_kernel_hook_ops.kho_bypass_tcp_portlist_delete(0, ntohs(tuple->src.u.all), CS_BYPASS_CNT_INVALID);
+
+			if (tuple->dst.u.all != 0)
+				cs_kernel_hook_ops.kho_bypass_tcp_portlist_delete(0, ntohs(tuple->dst.u.all), CS_BYPASS_CNT_INVALID);
+		}
+	}
+
+	if (test_bit(IPS_SRC_NAT_DONE_BIT, &ct->status) || test_bit(IPS_DST_NAT_DONE_BIT, &ct->status)) {
+		tuple = &(ct->tuplehash[0].tuple);
+		if (cs_kernel_hook_ops.kho_nat_entry_session_delete != NULL)
+			cs_kernel_hook_ops.kho_nat_entry_session_delete(0, tuple->dst.protonum, tuple->src.u3.ip, tuple->dst.u3.ip, tuple->src.u.all, tuple->dst.u.all);
+
+		tuple = &(ct->tuplehash[1].tuple);
+		if (tuple != NULL) {
+			if (cs_kernel_hook_ops.kho_nat_entry_session_delete != NULL)
+				cs_kernel_hook_ops.kho_nat_entry_session_delete(0, tuple->dst.protonum, tuple->src.u3.ip, tuple->dst.u3.ip, tuple->src.u.all, tuple->dst.u.all);
+		}
+	}
+#endif
 
 	tstamp = nf_conn_tstamp_find(ct);
 	if (tstamp && tstamp->stop == 0)
@@ -308,6 +392,10 @@ static void death_by_timeout(unsigned long ul_conntrack)
 	nf_ct_delete_from_lists(ct);
 	nf_ct_put(ct);
 }
+
+#ifdef CONFIG_CS752X_ACCEL_KERNEL
+EXPORT_SYMBOL_GPL(death_by_timeout);
+#endif
 
 /*
  * Warning :

@@ -56,6 +56,11 @@
 #include <net/checksum.h>
 #include <linux/mroute6.h>
 
+#ifdef CONFIG_CS75XX_HW_ACCEL_IPLIP
+int cs_is_ppp_tunnel_traffic(struct sk_buff *skb);
+void cs_lan2pe_hash_add(struct sk_buff *skb);
+#endif
+
 int ip6_fragment(struct sk_buff *skb, int (*output)(struct sk_buff *));
 
 int __ip6_local_out(struct sk_buff *skb)
@@ -135,6 +140,10 @@ static int ip6_finish_output2(struct sk_buff *skb)
 				skb->len);
 	}
 
+#ifdef CONFIG_CS75XX_HW_ACCEL_IPLIP
+	if (cs_is_ppp_tunnel_traffic(skb))
+		cs_lan2pe_hash_add(skb);
+#endif
 	rcu_read_lock();
 	neigh = dst_get_neighbour_noref(dst);
 	if (neigh) {

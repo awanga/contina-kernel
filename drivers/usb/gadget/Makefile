@@ -32,6 +32,11 @@ mv_udc-y			:= mv_udc_core.o
 obj-$(CONFIG_USB_CI13XXX_MSM)	+= ci13xxx_msm.o
 obj-$(CONFIG_USB_FUSB300)	+= fusb300_udc.o
 
+# cs752x OTG
+dwc_otg-objs := dwc_otg_cil.o dwc_otg_cil_intr.o dwc_otg_driver.o dwc_otg_pcd_intr.o dwc_otg_pcd.o dwc_otg_pcd_linux.o
+
+obj-$(CONFIG_USB_SNPS_DWC)	+= dwc_otg.o
+
 #
 # USB gadget drivers
 #

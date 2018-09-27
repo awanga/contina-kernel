@@ -31,7 +31,24 @@
 #include <linux/mtd/partitions.h>
 #include <linux/err.h>
 
+#if defined(CONFIG_MTD_ROOTFS_ROOT_DEV) || defined(CONFIG_MTD_ROOTFS_BADBLOCK)
+#include <linux/root_dev.h>
+#endif
+
 #include "mtdcore.h"
+
+#ifdef CONFIG_MTD_ROOTFS_BADBLOCK
+#include <linux/mtd/nand.h>
+
+struct part_badblocks_info{
+    struct mtd_info *mtd;  	/* partition mtd */
+    unsigned *bblist;        	/* bad block list */
+    unsigned num_bblocks;        /* bad blocks number in bblist*/
+};
+
+static struct part_badblocks_info *bb_info = NULL;
+
+#endif
 
 /* Our partition linked list */
 static LIST_HEAD(mtd_partitions);
@@ -63,6 +80,34 @@ static int part_read(struct mtd_info *mtd, loff_t from, size_t len,
 	struct mtd_part *part = PART(mtd);
 	struct mtd_ecc_stats stats;
 	int res;
+
+#ifdef CONFIG_MTD_ROOTFS_BADBLOCK
+
+	unsigned i;
+	struct nand_chip *this ;
+	unsigned block, end_block;
+
+	if (bb_info && bb_info->mtd == mtd ){
+
+		this = part->master->priv;
+		block = from >> this->bbt_erase_shift;
+		end_block= ( from + len -1 ) >> this->bbt_erase_shift;
+
+		if( block != end_block ) {
+			printk( KERN_WARNING "%s: Cross over blocks \n ", __func__);
+		}
+
+		for( i= 0; i < bb_info->num_bblocks; ++i ) {
+			if( bb_info->bblist[ i ] > block ) {
+				break;
+			}
+			++block;
+		}
+
+		from = block << this-> bbt_erase_shift | (from & (mtd->erasesize - 1));
+	}
+
+#endif
 
 	stats = part->master->ecc_stats;
 	res = part->master->_read(part->master, from + part->offset, len,
@@ -611,6 +656,69 @@ int mtd_del_partition(struct mtd_info *master, int partno)
 }
 EXPORT_SYMBOL_GPL(mtd_del_partition);
 
+#ifdef CONFIG_MTD_ROOTFS_BADBLOCK
+
+static int part_scan_bblist ( struct mtd_info *part_mtd )
+{
+	struct mtd_part *part = PART(part_mtd);
+	struct nand_chip *this = part->master->priv;
+	unsigned bad_blcok_count;
+	unsigned offset;
+	int index;
+
+	if (!part_mtd || !this) {
+		return -1;
+	}
+
+	if (bb_info != NULL || part_mtd->_block_isbad == NULL) {
+		return -1;
+	}
+
+	bad_blcok_count = 0;
+	for (offset = 0; offset < part_mtd->size; offset += part_mtd->erasesize) {
+		if (part_mtd->_block_isbad(part_mtd, offset))
+			++bad_blcok_count;
+	}
+
+	if (bad_blcok_count == 0) {
+		return 0;
+	}
+
+	bb_info = kmalloc(sizeof(struct part_badblocks_info), GFP_KERNEL);
+	if (!bb_info) {
+		printk("memory allocation error  %s/n", part_mtd->name);
+		return -1;
+	}
+
+	bb_info->bblist =
+	    kmalloc(sizeof(unsigned) * bad_blcok_count, GFP_KERNEL);
+	if (!bb_info->bblist) {
+		printk("memory allocation error  %s/n", part_mtd->name);
+		kfree(bb_info);
+		bb_info = NULL;
+		return -1;
+	}
+
+	memset(bb_info->bblist, 0, sizeof(unsigned) * bad_blcok_count);
+
+	index = 0;
+	for (offset = 0; index < bad_blcok_count && offset < part_mtd->size;
+	     offset += part_mtd->erasesize) {
+
+		if (part_mtd->_block_isbad(part_mtd, offset)) {
+			bb_info->bblist[index] =
+			    offset >> this->bbt_erase_shift;
+			index++;
+		}
+	}
+
+	bb_info->num_bblocks = bad_blcok_count;
+	bb_info->mtd = part_mtd;
+
+	return 0;
+}
+#endif
+
 /*
  * This function, given a master MTD object and a partition table, creates
  * and registers slave MTD objects which are bound to the master according to
@@ -640,7 +748,20 @@ int add_mtd_partitions(struct mtd_info *master,
 		mutex_unlock(&mtd_partitions_mutex);
 
 		add_mtd_device(&slave->mtd);
-
+#if defined(CONFIG_MTD_ROOTFS_ROOT_DEV) || defined(CONFIG_MTD_ROOTFS_BADBLOCK)
+		if (!strcmp(parts[i].name, "rootfs")) {
+#ifdef CONFIG_MTD_ROOTFS_ROOT_DEV
+			if (ROOT_DEV == 0) {
+				printk(KERN_NOTICE "mtd: partition \"rootfs\" "
+					"set to be root filesystem\n");
+				ROOT_DEV = MKDEV(MTD_BLOCK_MAJOR, slave->mtd.index);
+			}
+#endif
+#ifdef CONFIG_MTD_ROOTFS_BADBLOCK
+			part_scan_bblist(&slave->mtd);
+#endif
+		}
+#endif /* defined(CONFIG_MTD_ROOTFS_ROOT_DEV) || defined(CONFIG_MTD_ROOTFS_BADBLOCK) */
 		cur_offset = slave->offset + slave->mtd.size;
 	}
 

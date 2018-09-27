@@ -235,6 +235,9 @@ restart:
 			kstat_incr_softirqs_this_cpu(vec_nr);
 
 			trace_softirq_entry(vec_nr);
+#ifdef CONFIG_SMB_TUNING
+			h->max_restart = max_restart;
+#endif
 			h->action(h);
 			trace_softirq_exit(vec_nr);
 			if (unlikely(prev_count != preempt_count())) {

@@ -34,6 +34,7 @@ config SND_SOC_ALL_CODECS
 	select SND_SOC_CS4271 if SND_SOC_I2C_AND_SPI
 	select SND_SOC_CX20442
 	select SND_SOC_DA7210 if I2C
+	select SND_SOC_DAE4P if I2C
 	select SND_SOC_DFBMCS320
 	select SND_SOC_JZ4740_CODEC
 	select SND_SOC_LM4857 if I2C
@@ -209,6 +210,10 @@ config SND_SOC_L3
        tristate
 
 config SND_SOC_DA7210
+        tristate
+
+config SND_SOC_DAE4P
+	depends on ARCH_GOLDENGATE
         tristate
 
 config SND_SOC_DFBMCS320

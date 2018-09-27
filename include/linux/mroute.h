@@ -29,6 +29,10 @@
 #define MRT_ASSERT	(MRT_BASE+7)	/* Activate PIM assert mode		*/
 #define MRT_PIM		(MRT_BASE+8)	/* enable PIM code			*/
 #define MRT_TABLE	(MRT_BASE+9)	/* Specify mroute table ID		*/
+#ifdef CONFIG_ARCH_GOLDENGATE
+#define CS_L3_ENTRY_PORT_ADD	(MRT_BASE+10)	/* Add a multicast entry to G2 HW	*/
+#define CS_L3_ENTRY_PORT_DEL	(MRT_BASE+11)	/* Delete a multicast entry from G2 HW	*/
+#endif /* CONFIG_ARCH_GOLDENGATE */
 
 #define SIOCGETVIFCNT	SIOCPROTOPRIVATE	/* IP protocol privates */
 #define SIOCGETSGCNT	(SIOCPROTOPRIVATE+1)
@@ -137,7 +141,11 @@ struct igmpmsg {
 #ifdef CONFIG_IP_MROUTE
 static inline int ip_mroute_opt(int opt)
 {
+#ifndef CONFIG_ARCH_GOLDENGATE
 	return (opt >= MRT_BASE) && (opt <= MRT_BASE + 10);
+#else /* CONFIG_ARCH_GOLDENGATE */
+	return (opt >= MRT_BASE) && (opt <= MRT_BASE + 12);
+#endif /* CONFIG_ARCH_GOLDENGATE */
 }
 #else
 static inline int ip_mroute_opt(int opt)
@@ -212,8 +220,15 @@ struct mfc_cache {
 			unsigned long pkt;
 			unsigned long wrong_if;
 			unsigned char ttls[MAXVIFS];	/* TTL thresholds		*/
+#ifdef CONFIG_CS75XX_WFO
+			cs_uint16_t flow_ids[MAXVIFS];
+			cs_uint8_t flow_vifs[MAXVIFS / 8];
+#endif
 		} res;
 	} mfc_un;
+#ifdef CONFIG_CS75XX_WFO
+	int mfc_parent_real;
+#endif
 	struct rcu_head	rcu;
 };
 

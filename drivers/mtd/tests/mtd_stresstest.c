@@ -293,8 +293,20 @@ static int __init mtd_stresstest_init(void)
 	bufsize = mtd->erasesize * 2;
 
 	err = -ENOMEM;
+#ifndef CONFIG_ARCH_GOLDENGATE
 	readbuf = vmalloc(bufsize);
 	writebuf = vmalloc(bufsize);
+#else /* CONFIG_ARCH_GOLDENGATE */
+#if 1
+	printk(KERN_INFO "======================= vmalloc ==========================\n");
+	readbuf = vmalloc(bufsize);
+	writebuf = vmalloc(bufsize);
+#else
+	printk(KERN_INFO "======================= kmalloc ==========================\n");
+	readbuf = kmalloc(bufsize, GFP_KERNEL);
+	writebuf = kmalloc(bufsize, GFP_KERNEL);
+#endif
+#endif /* CONFIG_ARCH_GOLDENGATE */
 	offsets = kmalloc(ebcnt * sizeof(int), GFP_KERNEL);
 	if (!readbuf || !writebuf || !offsets) {
 		printk(PRINT_PREF "error: cannot allocate memory\n");
@@ -325,8 +337,18 @@ static int __init mtd_stresstest_init(void)
 out:
 	kfree(offsets);
 	kfree(bbt);
+#ifndef CONFIG_ARCH_GOLDENGATE
 	vfree(writebuf);
 	vfree(readbuf);
+#else /* CONFIG_ARCH_GOLDENGATE */
+#if 1
+	vfree(writebuf);
+	vfree(readbuf);
+#else
+	kfree(writebuf);
+	kfree(readbuf);
+#endif
+#endif /* CONFIG_ARCH_GOLDENGATE */
 out_put_mtd:
 	put_mtd_device(mtd);
 	if (err)

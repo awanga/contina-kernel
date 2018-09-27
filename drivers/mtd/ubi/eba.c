@@ -1255,13 +1255,14 @@ int ubi_eba_init_scan(struct ubi_device *ubi, struct ubi_scan_info *si)
 			continue;
 
 		ubi_rb_for_each_entry(rb, seb, &sv->root, u.rb) {
-			if (seb->lnum >= vol->reserved_pebs)
+			if (seb->lnum >= vol->reserved_pebs) {
 				/*
 				 * This may happen in case of an unclean reboot
 				 * during re-size.
 				 */
 				ubi_scan_move_to_list(sv, seb, &si->erase);
-			vol->eba_tbl[seb->lnum] = seb->pnum;
+			} else
+				vol->eba_tbl[seb->lnum] = seb->pnum;
 		}
 	}
 

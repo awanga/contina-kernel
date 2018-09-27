@@ -44,14 +44,22 @@
 
 #include "usb.h"
 
+#ifdef CONFIG_USB_SUSPEND
+#include <linux/pm_runtime.h>
+#endif
 
 const char *usbcore_name = "usbcore";
 
 static bool nousb;	/* Disable USB when built into kernel image */
 
 #ifdef	CONFIG_USB_SUSPEND
+#ifndef CONFIG_CORTINA_DISABLE_USB_PHY0_CLOCK
 static int usb_autosuspend_delay = 2;		/* Default delay value,
 						 * in seconds */
+#else
+static int usb_autosuspend_delay = 0;		/* Default delay value,
+						 * in seconds */
+#endif
 module_param_named(autosuspend, usb_autosuspend_delay, int, 0644);
 MODULE_PARM_DESC(autosuspend, "default autosuspend delay");
 

@@ -18,6 +18,13 @@
 #include <net/protocol.h>
 #include <net/udp.h>
 
+#ifdef CONFIG_CS752X_HW_ACCELERATION_IPSEC
+extern int cs_ipsec_handler(struct sk_buff *skb, struct xfrm_state *x, u8 ip_ver, u8 dir);
+#endif
+#ifdef CONFIG_CS75XX_HW_ACCEL_IPSEC_CTRL
+extern int cs_ipsec_ctrl(struct sk_buff *skb, struct xfrm_state *x, u8 ip_ver, u8 dir);
+#endif
+
 struct esp_skb_cb {
 	struct xfrm_skb_cb xfrm;
 	void *tmp;
@@ -136,6 +143,19 @@ static int esp_output(struct xfrm_state *x, struct sk_buff *skb)
 	int sglists;
 	int seqhilen;
 	__be32 *seqhi;
+
+#ifdef CONFIG_CS752X_HW_ACCELERATION_IPSEC
+	/* Cortina Acceleration
+	 * Inspect whether the ESP process can be accelerated or not. */
+	if (cs_ipsec_handler(skb, x, 0, 1) == 1)
+		return -EBUSY;
+#endif
+#ifdef CONFIG_CS75XX_HW_ACCEL_IPSEC_CTRL
+	/* Cortina Acceleration
+	 * Update cs_cb or redirect a packet to PE if possible */
+	if (cs_ipsec_ctrl(skb, x, 0, 0) == 1)
+		return -EBUSY;
+#endif
 
 	/* skb is pure payload to encrypt */
 
@@ -389,6 +409,18 @@ static int esp_input(struct xfrm_state *x, struct sk_buff *skb)
 	struct scatterlist *asg;
 	int err = -EINVAL;
 
+#ifdef CONFIG_CS752X_HW_ACCELERATION_IPSEC
+	/* Cortina Acceleration
+	 * Inspect whether the ESP process can be accelerated or not. */
+	if (cs_ipsec_handler(skb, x, 0, 0) == 1)
+		return 1;
+#endif
+#ifdef CONFIG_CS75XX_HW_ACCEL_IPSEC_CTRL
+	/* Cortina Acceleration
+	 * Update cs_cb or redirect a packet to PE if possible */
+	if (cs_ipsec_ctrl(skb, x, 0, 1) == 1)
+		return 1;
+#endif
 	if (!pskb_may_pull(skb, sizeof(*esph) + crypto_aead_ivsize(aead)))
 		goto out;
 

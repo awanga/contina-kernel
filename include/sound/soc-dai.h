@@ -246,6 +246,11 @@ struct snd_soc_dai {
 	void *playback_dma_data;
 	void *capture_dma_data;
 
+#ifdef CONFIG_ARCH_GOLDENGATE
+	/* DAI private data */
+	void *private_data;
+#endif /* CONFIG_ARCH_GOLDENGATE */
+
 	/* Symmetry data - only valid if symmetry is being enforced */
 	unsigned int rate;
 

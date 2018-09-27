@@ -115,6 +115,11 @@ static const struct ppp_channel_ops async_ops = {
 	.ioctl      = ppp_async_ioctl,
 };
 
+#ifdef CONFIG_CS752X_ACCEL_KERNEL
+extern void cs_pppoe_skb_recv_hook(struct sk_buff *skb, u16 pppoe_session_id, u8 direction);
+extern void cs_pppoe_skb_xmit_hook(struct sk_buff *skb, u16 pppoe_session_id, u8 direction);
+#endif
+
 /*
  * Routines implementing the PPP line discipline.
  */
@@ -666,6 +671,18 @@ ppp_async_push(struct asyncppp *ap)
 	if (test_and_set_bit(XMIT_BUSY, &ap->xmit_flags))
 		return 0;
 	spin_lock_bh(&ap->xmit_lock);
+
+#ifdef CONFIG_CS752X_ACCEL_KERNEL
+// LAN to WAN case
+{
+    if (ap->tpkt) {
+        if (ap->tpkt->mac_header && ap->tpkt->network_header) {
+            cs_pppoe_skb_recv_hook(ap->tpkt, 0xFFFF, 0);  //0: DIR_LAN2WAN
+        }/* if (ap->tpkt->mac_header && ap->tpkt->network_header) */
+    }/* if (ap->tpkt) */
+}
+#endif
+
 	for (;;) {
 		if (test_and_clear_bit(XMIT_WAKEUP, &ap->xmit_flags))
 			tty_stuffed = 0;
@@ -810,6 +827,10 @@ process_input_packet(struct asyncppp *ap)
 		if (proto == PPP_LCP)
 			async_lcp_peek(ap, p, skb->len, 1);
 	}
+
+#ifdef CONFIG_CS752X_ACCEL_KERNEL
+	cs_pppoe_skb_xmit_hook(skb, 0xFFFF, 1);  //1: DIR_WAN2LAN
+#endif
 
 	/* queue the frame to be processed */
 	skb->cb[0] = ap->state;

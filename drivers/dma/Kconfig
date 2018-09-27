@@ -259,6 +259,13 @@ config DMA_SA11X0
 	  SA-1110 SoCs.  This DMA engine can only be used with on-chip
 	  devices.
 
+config CORTINA_G2_ADMA
+	tristate "Cortina G2 ADMA support"
+	depends on ARCH_GOLDENGATE
+	select DMA_ENGINE
+	help
+	  Enable support for the Cortina-Systems(R) CS75xx Series built-in DMA engines.
+
 config DMA_ENGINE
 	bool
 

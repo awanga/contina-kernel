@@ -113,6 +113,10 @@ ssize_t dvb_ringbuffer_read_user(struct dvb_ringbuffer *rbuf, u8 __user *buf, si
 	size_t todo = len;
 	size_t split;
 
+#if defined(CONFIG_DVB_CS75XX_TS) || defined(CONFIG_DVB_CS75XX_TS_MODULE)
+        rbuf->type = G2_NO_ZERO_COPY;
+if (rbuf->type){ /* Amos: need copy control/data packet to user space */
+#endif
 	split = (rbuf->pread + len > rbuf->size) ? rbuf->size - rbuf->pread : 0;
 	if (split > 0) {
 		if (copy_to_user(buf, rbuf->data+rbuf->pread, split))
@@ -126,6 +130,15 @@ ssize_t dvb_ringbuffer_read_user(struct dvb_ringbuffer *rbuf, u8 __user *buf, si
 
 	rbuf->pread = (rbuf->pread + todo) % rbuf->size;
 
+#if defined(CONFIG_DVB_CS75XX_TS) || defined(CONFIG_DVB_CS75XX_TS_MODULE)
+} else {
+        /*printk("%s : buffer pointer = %x \n",__func__,(unsigned int)&rbuf->data);*/
+        if (copy_to_user(buf, (u8 *)&rbuf->data, 4))
+                return -EFAULT;
+
+        rbuf->pread = (rbuf->pread + todo) % rbuf->size;
+}
+#endif
 	return len;
 }
 
@@ -152,6 +165,10 @@ ssize_t dvb_ringbuffer_write(struct dvb_ringbuffer *rbuf, const u8 *buf, size_t 
 	size_t todo = len;
 	size_t split;
 
+#if defined(CONFIG_DVB_CS75XX_TS) || defined(CONFIG_DVB_CS75XX_TS_MODULE)
+        rbuf->type = G2_NO_ZERO_COPY;
+if (rbuf->type) { /* Amos: need copy control/data packet to user space */
+#endif
 	split = (rbuf->pwrite + len > rbuf->size) ? rbuf->size - rbuf->pwrite : 0;
 
 	if (split > 0) {
@@ -163,6 +180,13 @@ ssize_t dvb_ringbuffer_write(struct dvb_ringbuffer *rbuf, const u8 *buf, size_t 
 	memcpy(rbuf->data+rbuf->pwrite, buf, todo);
 	rbuf->pwrite = (rbuf->pwrite + todo) % rbuf->size;
 
+#if defined(CONFIG_DVB_CS75XX_TS) || defined(CONFIG_DVB_CS75XX_TS_MODULE)
+} else { /* Amos */
+        rbuf->data = (u8 *)buf; /* Amos: pass buffer pointer only */
+        printk("%s : buffer pointer = %x \n",__func__,(unsigned int)&rbuf->data);
+        rbuf->pwrite = (rbuf->pwrite + todo) % rbuf->size;
+}
+#endif
 	return len;
 }
 

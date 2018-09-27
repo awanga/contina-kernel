@@ -1638,10 +1638,16 @@ static struct hash_testvec hmac_sha256_tv_template[] = {
 	},
 };
 
+#ifdef CONFIG_CORTINA_GKCI
+#define XCBC_AES_TEST_VECTORS (6 - 1)
+#else
 #define XCBC_AES_TEST_VECTORS 6
+#endif
 
 static struct hash_testvec aes_xcbc128_tv_template[] = {
 	{
+#ifndef CONFIG_CORTINA_GKCI
+		/*SPAcc engine doesn't support 0 length packets for xcbc*/
 		.key	= "\x00\x01\x02\x03\x04\x05\x06\x07"
 			  "\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f",
 		.plaintext = zeroed_string,
@@ -1650,6 +1656,7 @@ static struct hash_testvec aes_xcbc128_tv_template[] = {
 		.psize	= 0,
 		.ksize	= 16,
 	}, {
+#endif
 		.key	= "\x00\x01\x02\x03\x04\x05\x06\x07"
 			  "\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f",
 		.plaintext = "\x00\x01\x02",
@@ -6121,7 +6128,11 @@ static struct cipher_testvec cast6_dec_tv_template[] = {
 #define AES_OFB_DEC_TEST_VECTORS 1
 #define AES_CTR_3686_ENC_TEST_VECTORS 7
 #define AES_CTR_3686_DEC_TEST_VECTORS 6
+#ifdef CONFIG_CORTINA_GKCI
+#define AES_GCM_ENC_TEST_VECTORS (9 - 3)
+#else
 #define AES_GCM_ENC_TEST_VECTORS 9
+#endif
 #define AES_GCM_DEC_TEST_VECTORS 8
 #define AES_GCM_4106_ENC_TEST_VECTORS 7
 #define AES_GCM_4106_DEC_TEST_VECTORS 7
@@ -8994,12 +9005,15 @@ static struct cipher_testvec aes_ofb_dec_tv_template[] = {
 
 static struct aead_testvec aes_gcm_enc_tv_template[] = {
 	{ /* From McGrew & Viega - http://citeseer.ist.psu.edu/656989.html */
+#ifndef CONFIG_CORTINA_GKCI
+		/*SPAcc engine doesn't support 0 length packets  for gcm*/
 		.key    = zeroed_string,
 		.klen	= 16,
 		.result	= "\x58\xe2\xfc\xce\xfa\x7e\x30\x61"
 			  "\x36\x7f\x1d\x57\xa4\xe7\x45\x5a",
 		.rlen	= 16,
 	}, {
+#endif
 		.key    = zeroed_string,
 		.klen	= 16,
 		.input  = zeroed_string,
@@ -9066,12 +9080,14 @@ static struct aead_testvec aes_gcm_enc_tv_template[] = {
 			  "\x94\xfa\xe9\x5a\xe7\x12\x1a\x47",
 		.rlen	= 76,
 	}, {
+#ifndef CONFIG_CORTINA_GKCI
 		.key    = zeroed_string,
 		.klen	= 24,
 		.result	= "\xcd\x33\xb2\x8a\xc7\x73\xf7\x4b"
 			  "\xa0\x0e\xd1\xf3\x12\x57\x24\x35",
 		.rlen	= 16,
 	}, {
+#endif
 		.key    = zeroed_string,
 		.klen	= 24,
 		.input  = zeroed_string,
@@ -9143,12 +9159,14 @@ static struct aead_testvec aes_gcm_enc_tv_template[] = {
 		.tap	= { 32, 28 },
 		.anp	= 2,
 		.atap	= { 8, 12 }
+#ifndef CONFIG_CORTINA_GKCI
 	}, {
 		.key    = zeroed_string,
 		.klen	= 32,
 		.result	= "\x53\x0f\x8a\xfb\xc7\x45\x36\xb9"
 			  "\xa9\x63\xb4\xf1\xc4\xcb\x73\x8b",
 		.rlen	= 16,
+#endif
 	}
 };
 

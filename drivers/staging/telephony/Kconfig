@@ -44,4 +44,32 @@ config PHONE_IXJ_PCMCIA
 	  cards manufactured by Quicknet Technologies, Inc.  This changes the
 	  card initialization code to work with the card manager daemon.
 
+config PHONE_CS75XX_WRAPPER
+	tristate "Cortina CS75XX phone wrapper"
+	depends on ARCH_GOLDENGATE
+
+config PHONE_CS75XX_SPI_16BITS_PERWORD
+	tristate "Cortina CS75XX phone wrapper support 16bits SPI transfer"
+	depends on PHONE_CS75XX_WRAPPER	
+	
+config  SLIC_SI3226X_SLOT0
+	select PHONE_CS75XX_SPI_16BITS_PERWORD
+	tristate "Cortina CS75XX SLIC SI3226X bind with SPI chip select 0"
+	depends on PHONE_CS75XX_WRAPPER
+
+config  SLIC_SI3226X_SLOT1
+	select PHONE_CS75XX_SPI_16BITS_PERWORD
+	tristate "Cortina CS75XX SLIC SI3226X bind with SPI chip select 2"
+	depends on PHONE_CS75XX_WRAPPER	
+	
+config  SLIC_VE880_SLOT0
+	tristate "Cortina CS75XX ZARLINK VE880 plug in slot0"
+	depends on PHONE_CS75XX_WRAPPER
+
+config  SLIC_VE880_SLOT1
+	tristate "Cortina CS75XX ZARLINK VE880 plug in slot1"
+	depends on PHONE_CS75XX_WRAPPER
+	
+
+	
 endif # PHONE

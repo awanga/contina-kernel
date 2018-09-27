@@ -24,12 +24,20 @@
 
 
 /* we must assign addresses for configurable endpoints (like net2280) */
+#ifndef CONFIG_ARCH_GOLDENGATE
 static unsigned epnum;
+#else /* CONFIG_ARCH_GOLDENGATE */
+static __initdata unsigned epnum;
+#endif /* CONFIG_ARCH_GOLDENGATE */
 
 // #define MANY_ENDPOINTS
 #ifdef MANY_ENDPOINTS
 /* more than 15 configurable endpoints */
+#ifndef CONFIG_ARCH_GOLDENGATE
 static unsigned in_epnum;
+#else /* CONFIG_ARCH_GOLDENGATE */
+static __initdata unsigned in_epnum;
+#endif /* CONFIG_ARCH_GOLDENGATE */
 #endif
 
 
@@ -49,7 +57,11 @@ static unsigned in_epnum;
  * NOTE:  each endpoint is unidirectional, as specified by its USB
  * descriptor; and isn't specific to a configuration or altsetting.
  */
+#ifndef CONFIG_ARCH_GOLDENGATE
 static int
+#else /* CONFIG_ARCH_GOLDENGATE */
+static int __init
+#endif /* CONFIG_ARCH_GOLDENGATE */
 ep_matches (
 	struct usb_gadget		*gadget,
 	struct usb_ep			*ep,
@@ -201,7 +213,11 @@ ep_matches (
 	return 1;
 }
 
+#ifndef CONFIG_ARCH_GOLDENGATE
 static struct usb_ep *
+#else /* CONFIG_ARCH_GOLDENGATE */
+static struct usb_ep * __init
+#endif /* CONFIG_ARCH_GOLDENGATE */
 find_ep (struct usb_gadget *gadget, const char *name)
 {
 	struct usb_ep	*ep;
@@ -257,7 +273,11 @@ find_ep (struct usb_gadget *gadget, const char *name)
  *
  * On failure, this returns a null endpoint descriptor.
  */
+#ifndef CONFIG_ARCH_GOLDENGATE
 struct usb_ep *usb_ep_autoconfig_ss(
+#else /* CONFIG_ARCH_GOLDENGATE */
+struct usb_ep * __init usb_ep_autoconfig_ss(
+#endif /* CONFIG_ARCH_GOLDENGATE */
 	struct usb_gadget		*gadget,
 	struct usb_endpoint_descriptor	*desc,
 	struct usb_ss_ep_comp_descriptor *ep_comp
@@ -295,6 +315,7 @@ struct usb_ep *usb_ep_autoconfig_ss(
 				goto found_ep;
 		}
 
+#ifndef CONFIG_ARCH_GOLDENGATE
 #ifdef CONFIG_BLACKFIN
 	} else if (gadget_is_musbhdrc(gadget)) {
 		if ((USB_ENDPOINT_XFER_BULK == type) ||
@@ -314,6 +335,19 @@ struct usb_ep *usb_ep_autoconfig_ss(
 			goto found_ep;
 #endif
 	}
+#else /* CONFIG_ARCH_GOLDENGATE */
+	} else if (gadget_is_sh (gadget) && USB_ENDPOINT_XFER_INT == type) {
+		/* single buffering is enough; maybe 8 byte fifo is too */
+		ep = find_ep (gadget, "ep3in-bulk");
+		if (ep && ep_matches (gadget, ep, desc, ep_comp))
+			goto found_ep;
+
+	} else if (gadget_is_mq11xx (gadget) && USB_ENDPOINT_XFER_INT == type) {
+		ep = find_ep (gadget, "ep1-bulk");
+		if (ep && ep_matches (gadget, ep, desc, ep_comp))
+			goto found_ep;
+	}
+#endif /* CONFIG_ARCH_GOLDENGATE */
 
 	/* Second, look at endpoints until an unclaimed one looks usable */
 	list_for_each_entry (ep, &gadget->ep_list, ep_list) {
@@ -378,7 +412,11 @@ struct usb_ep *usb_ep_autoconfig(
  * state such as ep->driver_data and the record of assigned endpoints
  * used by usb_ep_autoconfig().
  */
+#ifndef CONFIG_ARCH_GOLDENGATE
 void usb_ep_autoconfig_reset (struct usb_gadget *gadget)
+#else /* CONFIG_ARCH_GOLDENGATE */
+void __init usb_ep_autoconfig_reset (struct usb_gadget *gadget)
+#endif /* CONFIG_ARCH_GOLDENGATE */
 {
 	struct usb_ep	*ep;
 

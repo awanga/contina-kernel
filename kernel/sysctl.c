@@ -89,6 +89,9 @@
 #include <linux/nmi.h>
 #endif
 
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+#include <mach/cs_kernel_hook_api.h>
+#endif
 
 #if defined(CONFIG_SYSCTL)
 
@@ -1853,6 +1856,13 @@ static int __do_proc_dointvec(void *tbl_data, struct ctl_table *table,
 				err = -EINVAL;
 				break;
 			}
+
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+			if (!strcmp(table->procname,"base_reachable_time_ms")) {
+				if (cs_kernel_hook_ops.kho_l3_nexthop_aging_timer_set != NULL)
+                        		cs_kernel_hook_ops.kho_l3_nexthop_aging_timer_set(0, lval/1000);
+			}
+#endif
 		} else {
 			if (conv(&neg, &lval, i, 0, data)) {
 				err = -EINVAL;

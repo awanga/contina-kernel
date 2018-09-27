@@ -7,6 +7,10 @@
 
 obj-$(CONFIG_SOUND_OSS)		+= sound.o
 
+obj-$(CONFIG_SOUND_CS75XX_SPDIF) += cs75xx_sound/
+obj-$(CONFIG_SOUND_DAC_SSP)	+= dac.o
+obj-$(CONFIG_SOUND_D2_45057)    += d2_dae4p.o
+
 # Please leave it as is, cause the link order is significant !
 
 obj-$(CONFIG_SOUND_AEDSP16)	+= aedsp16.o

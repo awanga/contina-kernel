@@ -492,6 +492,12 @@ config GPIO_UCB1400
 	  This enables support for the Philips UCB1400 GPIO pins.
 	  The UCB1400 is an AC97 audio codec.
 
+config GPIO_CS75XX
+	bool "Cortina CS75XX GPIO"
+	depends on ARCH_GOLDENGATE
+	help
+	  Say Y here to support Cortina CS75XX GPIO.
+
 comment "MODULbus GPIO expanders:"
 
 config GPIO_JANZ_TTL

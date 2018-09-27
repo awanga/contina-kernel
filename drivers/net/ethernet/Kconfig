@@ -32,6 +32,7 @@ source "drivers/net/ethernet/calxeda/Kconfig"
 source "drivers/net/ethernet/chelsio/Kconfig"
 source "drivers/net/ethernet/cirrus/Kconfig"
 source "drivers/net/ethernet/cisco/Kconfig"
+source "drivers/net/ethernet/cs752x/Kconfig"
 source "drivers/net/ethernet/davicom/Kconfig"
 
 config DNET

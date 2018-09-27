@@ -329,6 +329,12 @@ ip6t_do_table(struct sk_buff *skb,
 	struct xt_action_param acpar;
 	unsigned int addend;
 
+#ifdef CONFIG_CORTINA_GKCI
+	/* debug_Aaron on 2012/08/27 for turn on/off netfilter dynamically */
+        if (!nf_ct_generic_enabled)
+                return NF_ACCEPT;
+#endif
+
 	/* Initialization */
 	indev = in ? in->name : nulldevname;
 	outdev = out ? out->name : nulldevname;

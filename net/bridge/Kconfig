@@ -46,3 +46,19 @@ config BRIDGE_IGMP_SNOOPING
 	  Say N to exclude this support and reduce the binary size.
 
 	  If unsure, say Y.
+
+config BRIDGE_PKT_FWD_FILTER
+	bool "Packet Forwarding Filter"
+	depends on ARCH_GOLDENGATE && BRIDGE && INET
+	default n
+	---help---
+	  Instead of partial feature of ebtables.
+	  It is used to filter packets according to VID or forwarding group
+	  in bridge mode.
+	  Basic policy:
+	  1. Bridging traffic will be blocked if 2 network interfaces are
+	     belong to the same forwarding group.
+	  2. Bridging traffic will be blocked if VID of WAN port is defined as
+	     DROP in corresponding bit of packet forwarding filter in LAN/WLAN
+	     port.
+

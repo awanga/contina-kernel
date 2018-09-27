@@ -245,6 +245,20 @@ config USB_RENESAS_USBHS_UDC
 	   dynamically linked module called "renesas_usbhs" and force all
 	   gadget drivers to also be dynamically linked.
 
+# cs752x OTG
+config USB_GADGET_SNPS_DWC_OTG
+	depends on ARCH_GOLDENGATE
+	tristate 'Synopsys Driver for DWC_otg Controller and Peripheral Driver'
+	select USB_GADGET_DUALSPEED
+	help
+	    Selects the Synopsys Driver for the DWC_otg Controller and Device Driver.
+
+config USB_SNPS_DWC
+	tristate 'Synopsys GADGET driver'
+	depends on USB_GADGET_SNPS_DWC_OTG
+	default USB_GADGET
+	select USB_GADGET_SELECTED
+
 config USB_PXA27X
 	tristate "PXA 27x"
 	depends on ARCH_PXA && (PXA27x || PXA3xx)

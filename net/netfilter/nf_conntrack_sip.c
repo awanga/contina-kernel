@@ -26,6 +26,9 @@
 #include <net/netfilter/nf_conntrack_zones.h>
 #include <linux/netfilter/nf_conntrack_sip.h>
 
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+#include <mach/cs_kernel_hook_api.h>
+#endif
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("Christian Hentschel <chentschel@arnet.com.ar>");
 MODULE_DESCRIPTION("SIP connection tracking helper");
@@ -943,6 +946,18 @@ static int set_expected_rtp_rtcp(struct sk_buff *skb, unsigned int dataoff,
 	nf_ct_expect_put(rtcp_exp);
 err2:
 	nf_ct_expect_put(rtp_exp);
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+	if (ret == NF_ACCEPT) {
+		/* RTP */
+		if (cs_kernel_hook_ops.kho_bypass_tcp_portlist_add != NULL)
+			cs_kernel_hook_ops.kho_bypass_udp_portlist_add(0, ntohs(rtp_port), CS_BYPASS_CNT_VALID);
+
+		/* RTCP */
+		if (cs_kernel_hook_ops.kho_bypass_tcp_portlist_add != NULL)
+			cs_kernel_hook_ops.kho_bypass_udp_portlist_add(0, ntohs(rtcp_port), CS_BYPASS_CNT_VALID);
+	}
+#endif
+
 err1:
 	return ret;
 }
@@ -1551,6 +1566,15 @@ static void nf_conntrack_sip_fini(void)
 			nf_conntrack_helper_unregister(&sip[i][j]);
 		}
 	}
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+	for (i = 0; i < ports_c; i++) {
+		if (cs_kernel_hook_ops.kho_bypass_tcp_portlist_delete != NULL)
+			cs_kernel_hook_ops.kho_bypass_tcp_portlist_delete(0, ports[i], CS_BYPASS_CNT_VALID);
+
+		if (cs_kernel_hook_ops.kho_bypass_udp_portlist_delete != NULL)
+			cs_kernel_hook_ops.kho_bypass_udp_portlist_delete(0, ports[i], CS_BYPASS_CNT_VALID);
+	}
+#endif
 }
 
 static int __init nf_conntrack_sip_init(void)
@@ -1603,6 +1627,15 @@ static int __init nf_conntrack_sip_init(void)
 			}
 		}
 	}
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+	for (i = 0; i < ports_c; i++) {
+		if (cs_kernel_hook_ops.kho_bypass_tcp_portlist_add != NULL)
+			cs_kernel_hook_ops.kho_bypass_tcp_portlist_add(0, ports[i], CS_BYPASS_CNT_VALID);
+
+		if (cs_kernel_hook_ops.kho_bypass_udp_portlist_add != NULL)
+			cs_kernel_hook_ops.kho_bypass_udp_portlist_add(0, ports[i], CS_BYPASS_CNT_VALID);
+	}
+#endif
 	return 0;
 }
 

@@ -24,6 +24,14 @@
 #include <linux/atomic.h>
 #include <asm/unaligned.h>
 #include "br_private.h"
+#ifdef CONFIG_ARCH_GOLDENGATE
+#include <linux/export.h>
+
+#ifdef CONFIG_CS752X_ACCEL_KERNEL
+extern void k_jt_cs_bridge_br_fdb_get_lastuse(struct net_bridge_fdb_entry *f);
+extern void k_jt_cs_bridge_br_fdb_delete(struct net_bridge_fdb_entry *f);
+#endif
+#endif /* CONFIG_ARCH_GOLDENGATE */
 
 static struct kmem_cache *br_fdb_cache __read_mostly;
 static int fdb_insert(struct net_bridge *br, struct net_bridge_port *source,
@@ -83,6 +91,10 @@ static void fdb_rcu_free(struct rcu_head *head)
 
 static void fdb_delete(struct net_bridge *br, struct net_bridge_fdb_entry *f)
 {
+#ifdef CONFIG_CS752X_ACCEL_KERNEL
+	k_jt_cs_bridge_br_fdb_delete(f);
+#endif
+
 	hlist_del_rcu(&f->hlist);
 	fdb_notify(br, f, RTM_DELNEIGH);
 	call_rcu(&f->rcu, fdb_rcu_free);
@@ -155,6 +167,11 @@ void br_fdb_cleanup(unsigned long _data)
 			unsigned long this_timer;
 			if (f->is_static)
 				continue;
+
+#ifdef CONFIG_CS752X_ACCEL_KERNEL
+			k_jt_cs_bridge_br_fdb_get_lastuse(f);
+#endif
+
 			this_timer = f->updated + delay;
 			if (time_before_eq(this_timer, jiffies))
 				fdb_delete(br, f);
@@ -271,6 +288,32 @@ int br_fdb_test_addr(struct net_device *dev, unsigned char *addr)
 }
 #endif /* CONFIG_ATM_LANE */
 
+#ifdef CONFIG_ARCH_GOLDENGATE
+int br_fdb_test_forward(struct net_device *dev, unsigned char *addr)
+{
+	struct net_bridge_fdb_entry *fdb;
+	struct net_bridge_port *port;
+	int ret;
+
+	if( dev==NULL )
+		return 0;
+
+	rcu_read_lock();
+	port = br_port_get_rcu(dev);
+	if (!port)
+		ret = 0;
+	else {
+		fdb = __br_fdb_get(port->br, addr);
+		ret = fdb && !fdb->is_local;
+	}
+	rcu_read_unlock();
+
+	return ret;
+}
+
+EXPORT_SYMBOL(br_fdb_test_forward);
+#endif /* CONFIG_ARCH_GOLDENGATE */
+
 /*
  * Fill buffer with forwarding table records in
  * the API format.
@@ -291,6 +334,10 @@ int br_fdb_fillbuf(struct net_bridge *br, void *buf,
 			if (num >= maxnum)
 				goto out;
 
+#ifdef CONFIG_CS752X_ACCEL_KERNEL
+			if (!f->is_local)
+				k_jt_cs_bridge_br_fdb_get_lastuse(f);
+#endif
 			if (has_expired(br, f))
 				continue;
 
@@ -435,9 +482,19 @@ void br_fdb_update(struct net_bridge *br, struct net_bridge_port *source,
 					"own address as source address\n",
 					source->dev->name);
 		} else {
+#ifdef CONFIG_CS752X_ACCEL_KERNEL
+			if (fdb->dst != source) {		
+				k_jt_cs_bridge_br_fdb_delete(fdb);
+			}
+#endif			
 			/* fastpath: update of existing entry */
-			fdb->dst = source;
 			fdb->updated = jiffies;
+			if (fdb->dst != source) {
+				/* Source addr changed from one bridge port to another */
+				/* Signal this by a new neighbor notification */
+				fdb->dst = source;
+				fdb_notify(br, fdb, RTM_NEWNEIGH);
+			}
 		}
 	} else {
 		spin_lock(&br->hash_lock);
@@ -739,3 +796,26 @@ int br_fdb_delete(struct sk_buff *skb, struct nlmsghdr *nlh, void *arg)
 
 	return err;
 }
+
+#ifdef CONFIG_CS752X_ACCEL_KERNEL
+int cs_br_fdb_delete_hash(struct net_bridge *br)
+{
+	int i, num = 0;
+	struct hlist_node *h;
+	struct net_bridge_fdb_entry *f;
+
+	rcu_read_lock();
+	for (i = 0; i < BR_HASH_SIZE; i++) {
+		hlist_for_each_entry_rcu(f, h, &br->hash[i], hlist) {
+			if (!f->is_local) {
+				k_jt_cs_bridge_br_fdb_get_lastuse(f);
+				if (has_expired(br, f)) {
+					k_jt_cs_bridge_br_fdb_delete(f);
+				}
+			}
+		}
+	}
+	rcu_read_unlock();
+}
+EXPORT_SYMBOL(cs_br_fdb_delete_hash);
+#endif

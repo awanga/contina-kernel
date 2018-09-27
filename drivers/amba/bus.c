@@ -365,9 +365,11 @@ static int amba_probe(struct device *dev)
 	int ret;
 
 	do {
+#if !defined(CONFIG_FB_CS752X_CLCD_NO_AMBA_PCLK)
 		ret = amba_get_enable_pclk(pcdev);
 		if (ret)
 			break;
+#endif
 
 		pm_runtime_get_noresume(dev);
 		pm_runtime_set_active(dev);
@@ -381,7 +383,9 @@ static int amba_probe(struct device *dev)
 		pm_runtime_set_suspended(dev);
 		pm_runtime_put_noidle(dev);
 
+#if !defined(CONFIG_FB_CS752X_CLCD_NO_AMBA_PCLK)
 		amba_put_disable_pclk(pcdev);
+#endif
 	} while (0);
 
 	return ret;
@@ -402,7 +406,9 @@ static int amba_remove(struct device *dev)
 	pm_runtime_set_suspended(dev);
 	pm_runtime_put_noidle(dev);
 
+#if !defined(CONFIG_FB_CS752X_CLCD_NO_AMBA_PCLK)
 	amba_put_disable_pclk(pcdev);
+#endif
 
 	return ret;
 }
@@ -493,7 +499,11 @@ int amba_device_add(struct amba_device *dev, struct resource *parent)
 		goto err_release;
 	}
 
+#if !defined(CONFIG_FB_CS752X_CLCD_NO_AMBA_PCLK)
 	ret = amba_get_enable_pclk(dev);
+#else
+	ret = 0;
+#endif
 	if (ret == 0) {
 		u32 pid, cid;
 
@@ -508,7 +518,9 @@ int amba_device_add(struct amba_device *dev, struct resource *parent)
 			cid |= (readl(tmp + size - 0x10 + 4 * i) & 255) <<
 				(i * 8);
 
+#if !defined(CONFIG_FB_CS752X_CLCD_NO_AMBA_PCLK)
 		amba_put_disable_pclk(dev);
+#endif
 
 		if (cid == AMBA_CID)
 			dev->periphid = pid;

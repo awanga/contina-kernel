@@ -53,6 +53,13 @@
 #include <linux/export.h>
 #include <net/ip6_checksum.h>
 
+#ifdef CONFIG_CS752X_ACCEL_KERNEL
+extern void k_jt_cs_mc_ip6mr_set_opt_mrt_init(struct mr6_table *mrt);
+extern void k_jt_cs_mc_ip6mr_set_opt_mrt_done(struct mr6_table *mrt);
+extern void k_jt_cs_mc_ip6mr_set_opt_add_mfc_before(struct mr6_table *mrt, struct mf6cctl *mfc);
+extern void k_jt_cs_mc_ip6mr_set_opt_del_mfc(struct mr6_table *mrt, struct mf6cctl *mfc);
+#endif
+
 struct mr6_table {
 	struct list_head	list;
 #ifdef CONFIG_NET_NS
@@ -1257,6 +1264,9 @@ static int ip6mr_mfc_delete(struct mr6_table *mrt, struct mf6cctl *mfc)
 			list_del(&c->list);
 			write_unlock_bh(&mrt_lock);
 
+#ifdef CONFIG_CS752X_ACCEL_KERNEL
+			k_jt_cs_mc_ip6mr_set_opt_del_mfc(mrt, mfc);
+#endif
 			ip6mr_cache_free(c);
 			return 0;
 		}
@@ -1417,7 +1427,17 @@ static int ip6mr_mfc_add(struct net *net, struct mr6_table *mrt,
 	if (found) {
 		write_lock_bh(&mrt_lock);
 		c->mf6c_parent = mfc->mf6cc_parent;
+#ifdef CONFIG_CS752X_ACCEL_KERNEL
+		int cs_min = c->mfc_un.res.minvif;
+		int cs_max = c->mfc_un.res.maxvif;
+#endif
 		ip6mr_update_thresholds(mrt, c, ttls);
+#ifdef CONFIG_CS752X_ACCEL_KERNEL
+		if ((cs_min != c->mfc_un.res.minvif) ||
+			(cs_max != c->mfc_un.res.maxvif)) {
+			k_jt_cs_mc_ip6mr_set_opt_add_mfc_before(mrt, mfc);
+		}
+#endif
 		if (!mrtsock)
 			c->mfc_flags |= MFC_STATIC;
 		write_unlock_bh(&mrt_lock);
@@ -1604,9 +1624,15 @@ int ip6_mroute_setsockopt(struct sock *sk, int optname, char __user *optval, uns
 		if (optlen < sizeof(int))
 			return -EINVAL;
 
+#ifdef CONFIG_CS752X_ACCEL_KERNEL
+		k_jt_cs_mc_ip6mr_set_opt_mrt_init(mrt);
+#endif
 		return ip6mr_sk_init(mrt, sk);
 
 	case MRT6_DONE:
+#ifdef CONFIG_CS752X_ACCEL_KERNEL
+		k_jt_cs_mc_ip6mr_set_opt_mrt_done(mrt);
+#endif
 		return ip6mr_sk_done(sk);
 
 	case MRT6_ADD_MIF:

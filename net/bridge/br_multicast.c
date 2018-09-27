@@ -30,8 +30,58 @@
 #include <net/addrconf.h>
 #include <net/ip6_checksum.h>
 #endif
+#ifdef CONFIG_CS75XX_DATA_PLANE_MULTICAST
+#include <mach/cs_mcast.h>
+#else
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+#include <mach/cs_kernel_hook_api.h>
+#endif
+#endif //CONFIG_CS75XX_DATA_PLANE_MULTICAST
 
 #include "br_private.h"
+
+
+#ifdef CONFIG_CS75XX_DATA_PLANE_MULTICAST
+/* TODO:
+    Please modify the follow code. 
+    if the G2 physical interface name is not "eth0/eth1/eth2",
+    or bridge interface name is not "br-lan"
+ */
+char *cs_network_interface_name[] = { "eth0", "eth1", "eth2", "br-lan", 0 };
+typedef enum {
+	CS_INTERFACE_ETH0,
+	CS_INTERFACE_ETH1,
+	CS_INTERFACE_ETH2,
+	CS_INTERFACE_BR_LAN,
+	CS_INTERFACE_NONE = 0xFF,
+} cs_network_interface_e;
+
+cs_port_id_t csGetPortIdbyInterfaceName(char *interfaceName)
+{
+    if (!strcmp (interfaceName, cs_network_interface_name[CS_INTERFACE_ETH0])) {
+        /* Fill G2 GMAC0 port id */ 
+        return 0;
+    } else if (!strcmp (interfaceName, cs_network_interface_name[CS_INTERFACE_ETH1])) {
+        /* Fill G2 GMAC1 port id */
+        return 1;
+    } else if (!strcmp (interfaceName, cs_network_interface_name[CS_INTERFACE_ETH2])) {
+        /* Fill G2 GMAC2 port id */
+        return 2;
+    } else {
+        /* Fill others device port id to CPU */
+        return 3;
+    }
+}
+#endif //CONFIG_CS75XX_DATA_PLANE_MULTICAST
+
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+__cs_uint32_t cur_mcast_grp_number=0;
+#endif
+
+#ifdef CONFIG_CS752X_ACCEL_KERNEL
+extern void cs_hw_accel_mc_delete_hash_by_ipv4_group(__be32 mcastgrp);
+extern void cs_hw_accel_mc_delete_hash_by_ipv6_group(__be32 * p_mcastgrp);
+#endif
 
 #define mlock_dereference(X, br) \
 	rcu_dereference_protected(X, lockdep_is_held(&br->multicast_lock))
@@ -235,6 +285,14 @@ static void br_multicast_group_expired(unsigned long data)
 
 	if (mp->ports)
 		goto out;
+#ifdef CONFIG_CS752X_ACCEL_KERNEL
+	if (mp->addr.proto == htons(ETH_P_IP))
+		cs_hw_accel_mc_delete_hash_by_ipv4_group(mp->addr.u.ip4);
+#if IS_ENABLED(CONFIG_IPV6)
+	else
+		cs_hw_accel_mc_delete_hash_by_ipv6_group(&(mp->addr.u.ip6.s6_addr32));
+#endif
+#endif
 
 	mdb = mlock_dereference(br->mdb, br);
 
@@ -588,6 +646,16 @@ static struct net_bridge_mdb_entry *br_multicast_new_group(
 	struct net_bridge_mdb_entry *mp;
 	int hash;
 	int err;
+#ifdef CONFIG_CS75XX_DATA_PLANE_MULTICAST
+	cs_port_id_t port_id;
+	cs_mcast_member_t cs_entry;
+	cs_status_t retStatus;
+#else
+//!CONFIG_CS75XX_DATA_PLANE_MULTICAST
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+	__cs_ip_address_t group_addr;
+#endif
+#endif //CONFIG_CS75XX_DATA_PLANE_MULTICAST
 
 	mdb = rcu_dereference_protected(br->mdb, 1);
 	if (!mdb) {
@@ -596,6 +664,83 @@ static struct net_bridge_mdb_entry *br_multicast_new_group(
 			return ERR_PTR(err);
 		goto rehash;
 	}
+
+#ifdef CONFIG_CS75XX_DATA_PLANE_MULTICAST
+    if (port) {
+        if (port->dev){
+	        retStatus = cs_l2_mcast_wan_port_id_get(0, &port_id);
+        	if ((retStatus == CS_E_OK) && (port_id != CS_DEFAULT_WAN_PORT_ID)) {
+                port_id = csGetPortIdbyInterfaceName(port->dev->name);
+    
+                memset(&cs_entry, 0, sizeof(cs_entry));
+    	        if (group->proto == htons(ETH_P_IP)) {
+    	            // IPv4
+        		    cs_entry.afi = CS_IPV4;
+                	cs_entry.grp_addr.ip_addr.ipv4_addr = group->u.ip4;
+                	cs_entry.grp_addr.addr_len = sizeof(cs_entry.grp_addr.ip_addr.ipv4_addr);
+#if IS_ENABLED(CONFIG_IPV6)
+        		} else {
+    	            // IPv6
+        		    cs_entry.afi = CS_IPV6;
+                	memcpy( &(cs_entry.grp_addr.ip_addr.ipv6_addr), 
+                	        &(group->u.ip6.s6_addr32), 
+                	        sizeof(group->u.ip6.s6_addr32) );
+                	cs_entry.grp_addr.addr_len = sizeof(group->u.ip6.s6_addr32);
+#endif
+        		}
+                cs_entry.sub_port = port_id;
+            	cs_entry.grp_addr.afi = cs_entry.afi;
+            	cs_entry.mode = CS_MCAST_EXCLUDE;
+            	cs_entry.src_num = 1;
+            	retStatus = cs_l2_mcast_member_add(0, cs_entry.sub_port, &cs_entry);
+            	
+            	if (port_id <= 2) {
+            	    /* Don't add into mdb if device is GMAC0/GMAC1/GMAC2 */
+            	    err = -EINVAL ;
+            	    return ERR_PTR(err);
+            	}
+           	}
+        }
+    }
+#else
+//!CONFIG_CS75XX_DATA_PLANE_MULTICAST
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+    memset(&group_addr, 0, sizeof(group_addr));
+    if (group->proto == htons(ETH_P_IP)) {
+        // IPv4
+	    group_addr.afi = __CS_IPV4;
+    	group_addr.ip_addr.ipv4_addr = ntohl(group->u.ip4);
+    	group_addr.addr_len = sizeof(group->u.ip4);
+#if IS_ENABLED(CONFIG_IPV6)
+	} else {
+        // IPv6
+	    group_addr.afi = __CS_IPV6;
+		group_addr.ip_addr.ipv6_addr[0] = ntohl(group->u.ip6.s6_addr32[0]);
+		group_addr.ip_addr.ipv6_addr[1] = ntohl(group->u.ip6.s6_addr32[1]);
+		group_addr.ip_addr.ipv6_addr[2] = ntohl(group->u.ip6.s6_addr32[2]);
+		group_addr.ip_addr.ipv6_addr[3] = ntohl(group->u.ip6.s6_addr32[3]);
+    	group_addr.addr_len = sizeof(group->u.ip6.s6_addr32);
+#endif
+	}
+    if (cs_kernel_hook_ops.kho_l2_mcast_member_add != NULL) {
+        if (port) {
+            if (port->dev){
+                cs_kernel_hook_ops.kho_l2_mcast_member_add(0, port->dev->name, &group_addr);
+            }
+        }
+    }
+#else //CONFIG_LYNXE_KERNEL_HOOK
+//!CONFIG_LYNXE_KERNEL_HOOK
+#ifdef CONFIG_CS752X_ACCEL_KERNEL
+	if (group->proto == htons(ETH_P_IP))
+		cs_hw_accel_mc_delete_hash_by_ipv4_group(group->u.ip4);
+#if IS_ENABLED(CONFIG_IPV6)
+	else
+		cs_hw_accel_mc_delete_hash_by_ipv6_group(&(group->u.ip6.s6_addr32));
+#endif
+#endif //CONFIG_CS752X_ACCEL_KERNEL
+#endif //!CONFIG_LYNXE_KERNEL_HOOK
+#endif //!CONFIG_CS75XX_DATA_PLANE_MULTICAST
 
 	hash = br_ip_hash(mdb, group);
 	mp = br_multicast_get_group(br, port, group, hash);
@@ -704,6 +849,32 @@ static int br_ip4_multicast_add_group(struct net_bridge *br,
 }
 
 #if IS_ENABLED(CONFIG_IPV6)
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+static void br_multicast_leave_group(struct net_bridge *br,
+				     struct net_bridge_port *port,
+				     struct br_ip *group);
+static int br_ip6_multicast_add_group(struct net_bridge *br,
+				      struct net_bridge_port *port,
+				      const struct in6_addr *group,
+				      u8 grec_type)
+{
+	struct br_ip br_group;
+
+	if (!ipv6_is_transient_multicast(group))
+		return 0;
+
+	br_group.u.ip6 = *group;
+	br_group.proto = htons(ETH_P_IPV6);
+	
+	if (grec_type == MLD2_CHANGE_TO_INCLUDE) {
+	    br_multicast_leave_group(br, port, &br_group);
+	} else {
+	    return br_multicast_add_group(br, port, &br_group);
+	}
+
+	 return 0;
+}
+#else /* CONFIG_LYNXE_KERNEL_HOOK */
 static int br_ip6_multicast_add_group(struct net_bridge *br,
 				      struct net_bridge_port *port,
 				      const struct in6_addr *group)
@@ -718,6 +889,7 @@ static int br_ip6_multicast_add_group(struct net_bridge *br,
 
 	return br_multicast_add_group(br, port, &br_group);
 }
+#endif /* CONFIG_LYNXE_KERNEL_HOOK */
 #endif
 
 static void br_multicast_router_expired(unsigned long data)
@@ -971,7 +1143,11 @@ static int br_ip6_multicast_mld2_report(struct net_bridge *br,
 			continue;
 		}
 
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+	    err = br_ip6_multicast_add_group(br, port, &grec->grec_mca, grec->grec_type);
+#else
 		err = br_ip6_multicast_add_group(br, port, &grec->grec_mca);
+#endif
 		if (!err)
 			break;
 	}
@@ -1162,7 +1338,7 @@ static int br_ip6_multicast_query(struct net_bridge *br,
 		if (!mld2q->mld2q_nsrcs)
 			group = &mld2q->mld2q_mca;
 
-		max_delay = max(msecs_to_jiffies(MLDV2_MRC(ntohs(mld2q->mld2q_mrc))), 1UL);
+		max_delay = max(msecs_to_jiffies(mldv2_mrc(mld2q)), 1UL);
 	}
 
 	if (!group)
@@ -1203,12 +1379,108 @@ static void br_multicast_leave_group(struct net_bridge *br,
 	struct net_bridge_port_group *p;
 	unsigned long now;
 	unsigned long time;
+#ifdef CONFIG_CS75XX_DATA_PLANE_MULTICAST
+	cs_port_id_t port_id;
+	cs_mcast_member_t cs_entry;
+	cs_status_t retStatus;
+#else
+//!CONFIG_CS75XX_DATA_PLANE_MULTICAST
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+	__cs_ip_address_t group_addr;
+#endif
+#endif //CONFIG_CS75XX_DATA_PLANE_MULTICAST
 
 	spin_lock(&br->multicast_lock);
+
+#ifdef CONFIG_CS75XX_DATA_PLANE_MULTICAST
+	if (!netif_running(br->dev) ||
+	    (port && port->state == BR_STATE_DISABLED)) {
+		goto out;
+	}
+    
+    if (port && port->dev) {
+        port_id = csGetPortIdbyInterfaceName(port->dev->name);
+
+        memset(&cs_entry, 0, sizeof(cs_entry));
+        if (group->proto == htons(ETH_P_IP)) {
+            // IPv4
+		    cs_entry.afi = CS_IPV4;
+        	cs_entry.grp_addr.ip_addr.ipv4_addr = group->u.ip4;
+        	cs_entry.grp_addr.addr_len = sizeof(cs_entry.grp_addr.ip_addr.ipv4_addr);
+#if IS_ENABLED(CONFIG_IPV6)
+		} else {
+            // IPv6
+		    cs_entry.afi = CS_IPV6;
+        	memcpy( &(cs_entry.grp_addr.ip_addr.ipv6_addr), 
+        	        &(group->u.ip6.s6_addr32), 
+        	        sizeof(group->u.ip6.s6_addr32) );
+        	cs_entry.grp_addr.addr_len = sizeof(group->u.ip6.s6_addr32);
+#endif
+		}
+        cs_entry.sub_port = port_id;
+    	cs_entry.grp_addr.afi = cs_entry.afi;
+    	cs_entry.mode = CS_MCAST_EXCLUDE;
+    	cs_entry.src_num = 1;
+    	retStatus = cs_l2_mcast_member_delete(0, cs_entry.sub_port, &cs_entry);
+    }//if (port && port->dev)
+
+	if (timer_pending(&br->multicast_querier_timer)) {
+		goto out;
+	}
+#else //CONFIG_CS75XX_DATA_PLANE_MULTICAST
+/* !CONFIG_CS75XX_DATA_PLANE_MULTICAST */
+
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+	if (!netif_running(br->dev) ||
+	    (port && port->state == BR_STATE_DISABLED))
+		goto out;
+
+    memset(&group_addr, 0, sizeof(group_addr));
+    if (group->proto == htons(ETH_P_IP)) {
+        // IPv4
+	    group_addr.afi = __CS_IPV4;
+    	group_addr.ip_addr.ipv4_addr = ntohl(group->u.ip4);
+    	group_addr.addr_len = sizeof(group->u.ip4);
+#if IS_ENABLED(CONFIG_IPV6)
+	} else {
+        // IPv6
+	    group_addr.afi = __CS_IPV6;
+	    group_addr.afi = __CS_IPV6;
+		group_addr.ip_addr.ipv6_addr[0] = ntohl(group->u.ip6.s6_addr32[0]);
+		group_addr.ip_addr.ipv6_addr[1] = ntohl(group->u.ip6.s6_addr32[1]);
+		group_addr.ip_addr.ipv6_addr[2] = ntohl(group->u.ip6.s6_addr32[2]);
+		group_addr.ip_addr.ipv6_addr[3] = ntohl(group->u.ip6.s6_addr32[3]);
+    	group_addr.addr_len = sizeof(group->u.ip6.s6_addr32);
+#endif
+	}
+    if (cs_kernel_hook_ops.kho_l2_mcast_member_delete != NULL) {
+        if (port) {
+            if (port->dev){
+                cs_kernel_hook_ops.kho_l2_mcast_member_delete(0, port->dev->name, &group_addr);
+            }
+        }
+    }
+
+	if (timer_pending(&br->multicast_querier_timer)) {
+		goto out;
+	}
+#else
+//!CONFIG_LYNXE_KERNEL_HOOK
 	if (!netif_running(br->dev) ||
 	    (port && port->state == BR_STATE_DISABLED) ||
 	    timer_pending(&br->multicast_querier_timer))
 		goto out;
+
+#ifdef CONFIG_CS752X_ACCEL_KERNEL
+	if (group->proto == htons(ETH_P_IP))
+		cs_hw_accel_mc_delete_hash_by_ipv4_group(group->u.ip4);
+#if IS_ENABLED(CONFIG_IPV6)
+	else
+		cs_hw_accel_mc_delete_hash_by_ipv6_group(&(group->u.ip6.s6_addr32));
+#endif
+#endif //CONFIG_CS752X_ACCEL_KERNEL
+#endif //!CONFIG_LYNXE_KERNEL_HOOK
+#endif //!CONFIG_CS75XX_DATA_PLANE_MULTICAST
 
 	mdb = mlock_dereference(br->mdb, br);
 	mp = br_mdb_ip_get(mdb, group);
@@ -1358,7 +1630,11 @@ static int br_multicast_ipv4_rcv(struct net_bridge *br,
 	switch (ih->type) {
 	case IGMP_HOST_MEMBERSHIP_REPORT:
 	case IGMPV2_HOST_MEMBERSHIP_REPORT:
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+		BR_INPUT_SKB_CB(skb2)->mrouters_only = 1;
+#else /* CONFIG_LYNXE_KERNEL_HOOK */
 		BR_INPUT_SKB_CB(skb)->mrouters_only = 1;
+#endif /* CONFIG_LYNXE_KERNEL_HOOK */
 		err = br_ip4_multicast_add_group(br, port, ih->group);
 		break;
 	case IGMPV3_HOST_MEMBERSHIP_REPORT:
@@ -1487,8 +1763,13 @@ static int br_multicast_ipv6_rcv(struct net_bridge *br,
 			goto out;
 		}
 		mld = (struct mld_msg *)skb_transport_header(skb2);
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+		BR_INPUT_SKB_CB(skb2)->mrouters_only = 1;
+		err = br_ip6_multicast_add_group(br, port, &mld->mld_mca, 0);
+#else /* CONFIG_LYNXE_KERNEL_HOOK */
 		BR_INPUT_SKB_CB(skb)->mrouters_only = 1;
 		err = br_ip6_multicast_add_group(br, port, &mld->mld_mca);
+#endif /* CONFIG_LYNXE_KERNEL_HOOK */
 		break;
 	    }
 	case ICMPV6_MLD2_REPORT:

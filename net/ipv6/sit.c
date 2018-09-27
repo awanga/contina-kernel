@@ -830,7 +830,17 @@ static netdev_tx_t ipip6_tunnel_xmit(struct sk_buff *skb,
 	iph 			=	ip_hdr(skb);
 	iph->version		=	4;
 	iph->ihl		=	sizeof(struct iphdr)>>2;
+#ifdef CONFIG_CORTINA_GKCI
+	/*
+	*    [20120703] ethan fix bug#36085
+	*    force DF to 0;
+	*    iph->frag_off		=	df;
+	*/
+
+	iph->frag_off		=	0;
+#else
 	iph->frag_off		=	df;
+#endif
 	iph->protocol		=	IPPROTO_IPV6;
 	iph->tos		=	INET_ECN_encapsulate(tos, ipv6_get_dsfield(iph6));
 	iph->daddr		=	fl4.daddr;

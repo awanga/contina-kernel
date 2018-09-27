@@ -37,6 +37,11 @@
 #include <linux/string.h>
 #include <linux/log2.h>
 
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+#include <linux/if_arp.h>
+#include <mach/cs_kernel_hook_api.h>
+#endif
+
 #define NEIGH_DEBUG 1
 
 #define NEIGH_PRINTK(x...) printk(x)
@@ -63,6 +68,41 @@ static int pneigh_ifdown(struct neigh_table *tbl, struct net_device *dev);
 static struct neigh_table *neigh_tables;
 #ifdef CONFIG_PROC_FS
 static const struct file_operations neigh_stat_seq_fops;
+#endif
+
+#ifdef CONFIG_CS752X_HW_ACCELERATION
+extern void cs_neigh_delete(void *data);
+extern void cs_neigh_update_used(void *data);
+#endif
+
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+void cs_call_kho_neigh_update_used(struct neighbour *n)
+{
+	struct neigh_table      *tbl=n->tbl;
+	__cs_ip_address_t ip_addr;
+
+ 	if (n != NULL && n->nud_state != NUD_NOARP) {
+
+		/* To avoid non-complete ARP entry to be updated */
+		if (n->ha[0] == 0 && n->ha[1] == 0 && n->ha[2] == 0 && n->ha[3] == 0 && n->ha[4] == 0 && n->ha[5] == 0) 
+			return;
+
+		if (tbl->key_len == 4) {
+        		ip_addr.afi = __CS_IPV4;
+			ip_addr.ip_addr.ipv4_addr = *((__cs_uint32_t *)n->primary_key);
+			ip_addr.addr_len = 32;
+		}
+		else {
+			ip_addr.afi = __CS_IPV6;
+			memcpy(&(ip_addr.ip_addr.ipv6_addr[0]), n->primary_key, sizeof(ip_addr.ip_addr.ipv6_addr));
+			ip_addr.addr_len = 128;
+		}
+
+		if (cs_kernel_hook_ops.kho_neigh_update_used != NULL) {
+			cs_kernel_hook_ops.kho_neigh_update_used(0, n->dev->ifindex, &ip_addr, &(n->used));
+		}
+	}
+}
 #endif
 
 /*
@@ -734,6 +774,13 @@ void neigh_destroy(struct neighbour *neigh)
 
 	NEIGH_PRINTK2("neigh %p is destroyed.\n", neigh);
 
+#ifdef CONFIG_CS752X_HW_ACCELERATION
+	/* Cortina Acceleration
+	 * SW neighbour entry is going to be deleted, so we are deleting it from 
+	 * HW mapping entry. */
+	cs_neigh_delete((void *)neigh);
+#endif
+
 	atomic_dec(&neigh->tbl->entries);
 	kfree_rcu(neigh, rcu);
 }
@@ -795,6 +842,16 @@ static void neigh_periodic_work(struct work_struct *work)
 		while ((n = rcu_dereference_protected(*np,
 				lockdep_is_held(&tbl->lock))) != NULL) {
 			unsigned int state;
+
+#ifdef CONFIG_CS752X_HW_ACCELERATION
+			/* Cortina Acceleration
+			 * Update HW info to this neighbour entry */
+			cs_neigh_update_used((void *)n);
+#endif
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+			cs_call_kho_neigh_update_used(n);
+#endif
+
 
 			write_lock(&n->lock);
 
@@ -903,6 +960,15 @@ static void neigh_timer_handler(unsigned long arg)
 
 	if (!(state & NUD_IN_TIMER))
 		goto out;
+
+#ifdef CONFIG_CS752X_HW_ACCELERATION
+	/* Cortina Acceleration
+	 * Update HW info to this neighbour entry */
+	cs_neigh_update_used((void *)neigh);
+#endif
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+	cs_call_kho_neigh_update_used(neigh);
+#endif
 
 	if (state & NUD_REACHABLE) {
 		if (time_before_eq(now,
@@ -1087,6 +1153,10 @@ int neigh_update(struct neighbour *neigh, const u8 *lladdr, u8 new,
 	struct net_device *dev;
 	int update_isrouter = 0;
 
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+        struct neigh_table      *tbl=neigh->tbl;
+#endif
+
 	write_lock_bh(&neigh->lock);
 
 	dev    = neigh->dev;
@@ -1111,6 +1181,29 @@ int neigh_update(struct neighbour *neigh, const u8 *lladdr, u8 new,
 		}
 		goto out;
 	}
+
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+        if (lladdr && (dev->addr_len == 6) && neigh->ha[0] == 0 && neigh->ha[1] == 0 && neigh->ha[2] == 0
+                && neigh->ha[3] == 0 && neigh->ha[4] == 0 && neigh->ha[5] == 0) {
+
+                __cs_ip_address_t ip_addr;
+
+                if (tbl->key_len == 4) {
+                        ip_addr.afi = __CS_IPV4;
+                        ip_addr.ip_addr.ipv4_addr = *((__cs_uint32_t *)neigh->primary_key);
+                        ip_addr.addr_len = 32;
+                }
+                else {
+                        ip_addr.afi = __CS_IPV6;
+                        memcpy(&(ip_addr.ip_addr.ipv6_addr[0]), neigh->primary_key, sizeof(ip_addr.ip_addr.ipv6_addr));
+                        ip_addr.addr_len = 128;
+                }
+
+                if (cs_kernel_hook_ops.kho_neigh_add != NULL) {
+                        cs_kernel_hook_ops.kho_neigh_add(0, dev->ifindex, (__cs_uint8_t *) lladdr, &ip_addr);
+                }
+        }
+#endif
 
 	/* Compare new lladdr with cached one */
 	if (!dev->addr_len) {
@@ -1173,6 +1266,13 @@ int neigh_update(struct neighbour *neigh, const u8 *lladdr, u8 new,
 	}
 
 	if (lladdr != neigh->ha) {
+#ifdef CONFIG_CS752X_HW_ACCELERATION
+		/* Cortina Acceleration
+		 * SW neighbour entry is going to be updated,
+		 * so we are deleting the old HW mapping entry. */
+		cs_neigh_delete((void *)neigh);
+#endif
+		
 		write_seqlock(&neigh->ha_lock);
 		memcpy(&neigh->ha, lladdr, dev->addr_len);
 		write_sequnlock(&neigh->ha_lock);
@@ -1221,6 +1321,59 @@ out:
 
 	if (notify)
 		neigh_update_notify(neigh);
+
+#ifdef CONFIG_CS752X_HW_ACCELERATION
+	/* Cortina Acceleration
+	 * SW neighbour entry is going to be deleted, so we are deleting it from 
+	 * HW mapping entry. */
+	if (!(new & NUD_VALID))
+		cs_neigh_delete((void *)neigh);
+#endif
+
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+	if (!(new & NUD_VALID)) {
+                u32 *ip_addr_v4;
+		__cs_ip_address_t ip_addr;
+
+                ip_addr_v4 = (u32 *)neigh->primary_key;
+
+                if (cs_kernel_hook_ops.kho_nat_entry_delete != NULL)
+                        cs_kernel_hook_ops.kho_nat_entry_delete(0, *ip_addr_v4);
+
+                if (tbl->key_len == 4) {
+                	ip_addr.afi = __CS_IPV4;
+                        ip_addr.ip_addr.ipv4_addr = *((__cs_uint32_t *)neigh->primary_key);
+                        ip_addr.addr_len = 32;
+                }
+                else {
+               	        ip_addr.afi = __CS_IPV6;
+                        memcpy(&(ip_addr.ip_addr.ipv6_addr[0]), neigh->primary_key, sizeof(ip_addr.ip_addr.ipv6_addr));
+                        ip_addr.addr_len = 128;
+                }
+                if (cs_kernel_hook_ops.kho_neigh_delete != NULL)
+			cs_kernel_hook_ops.kho_neigh_delete(0, neigh->dev->ifindex, &ip_addr);
+        }
+        else {
+		if (lladdr && (dev->addr_len == 6)) {
+
+			__cs_ip_address_t ip_addr;
+
+			if (tbl->key_len == 4) {
+                        	ip_addr.afi = __CS_IPV4;
+                        	ip_addr.ip_addr.ipv4_addr = *((__cs_uint32_t *)neigh->primary_key);
+                        	ip_addr.addr_len = 32;
+                	}
+                	else {
+                        	ip_addr.afi = __CS_IPV6;
+                        	memcpy(&(ip_addr.ip_addr.ipv6_addr[0]), neigh->primary_key, sizeof(ip_addr.ip_addr.ipv6_addr));
+                        	ip_addr.addr_len = 128;
+                	}
+
+                	if (cs_kernel_hook_ops.kho_neigh_update != NULL)
+                        	cs_kernel_hook_ops.kho_neigh_update(0, dev->ifindex, (__cs_uint8_t *)lladdr, &ip_addr);
+		}
+        }
+#endif
 
 	return err;
 }
@@ -2226,6 +2379,17 @@ static int neigh_dump_table(struct neigh_table *tbl, struct sk_buff *skb,
 				continue;
 			if (idx < s_idx)
 				goto next;
+
+#ifdef CONFIG_CS752X_HW_ACCELERATION
+			/* Cortina Acceleration
+			 * Update HW info to this neighbour entry */
+			cs_neigh_update_used((void *)n);
+#endif
+
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+			cs_call_kho_neigh_update_used(n);
+#endif
+
 			if (neigh_fill_info(skb, n, NETLINK_CB(cb->skb).pid,
 					    cb->nlh->nlmsg_seq,
 					    RTM_NEWNEIGH,

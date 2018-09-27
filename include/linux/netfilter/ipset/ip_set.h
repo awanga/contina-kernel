@@ -316,6 +316,7 @@ struct ip_set_type {
 /* register and unregister set type */
 extern int ip_set_type_register(struct ip_set_type *set_type);
 extern void ip_set_type_unregister(struct ip_set_type *set_type);
+extern void (*ip_set_modified)(struct net *, u16, void *, void *);
 
 /* A generic IP set */
 struct ip_set {

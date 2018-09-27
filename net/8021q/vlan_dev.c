@@ -156,7 +156,16 @@ static netdev_tx_t vlan_dev_hard_start_xmit(struct sk_buff *skb,
 		u16 vlan_tci;
 		vlan_tci = vlan_dev_priv(dev)->vlan_id;
 		vlan_tci |= vlan_dev_get_egress_qos_mask(dev, skb);
+
+#ifndef CONFIG_ARCH_GOLDENGATE
 		skb = __vlan_hwaccel_put_tag(skb, vlan_tci);
+#else /* CONFIG_ARCH_GOLDENGATE */
+		skb = /*__vlan_hwaccel_put_tag*/ vlan_put_tag(skb, vlan_tci);
+		if (unlikely(!skb)) {
+			this_cpu_inc(vlan_dev_priv(dev)->vlan_pcpu_stats->tx_dropped);
+			return NET_XMIT_CN; /* congention notification */
+		}
+#endif /* CONFIG_ARCH_GOLDENGATE */
 	}
 
 	skb->dev = vlan_dev_priv(dev)->real_dev;
@@ -791,3 +800,11 @@ void vlan_setup(struct net_device *dev)
 
 	memset(dev->broadcast, 0, ETH_ALEN);
 }
+#ifdef CONFIG_ARCH_GOLDENGATE
+#ifdef CONFIG_BRIDGE_PKT_FWD_FILTER
+unsigned short vlan_dev_get_vid(struct net_device *dev)
+{
+	return vlan_dev_priv(dev)->vlan_id;
+}
+#endif
+#endif /* CONFIG_ARCH_GOLDENGATE */

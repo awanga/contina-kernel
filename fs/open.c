@@ -370,6 +370,9 @@ SYSCALL_DEFINE2(access, const char __user *, filename, int, mode)
 {
 	return sys_faccessat(AT_FDCWD, filename, mode);
 }
+#ifdef CONFIG_ARCH_GOLDENGATE
+EXPORT_SYMBOL(sys_access);	/* D2 MOD */
+#endif /* CONFIG_ARCH_GOLDENGATE */
 
 SYSCALL_DEFINE1(chdir, const char __user *, filename)
 {
@@ -1008,6 +1011,9 @@ SYSCALL_DEFINE3(open, const char __user *, filename, int, flags, umode_t, mode)
 	return ret;
 }
 
+#ifdef CONFIG_ARCH_GOLDENGATE
+EXPORT_SYMBOL(sys_open);	/* D2 MOD */
+#endif /* CONFIG_ARCH_GOLDENGATE */
 SYSCALL_DEFINE4(openat, int, dfd, const char __user *, filename, int, flags,
 		umode_t, mode)
 {

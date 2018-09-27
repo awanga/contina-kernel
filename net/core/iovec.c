@@ -125,6 +125,34 @@ int memcpy_toiovecend(const struct iovec *iov, unsigned char *kdata,
 }
 EXPORT_SYMBOL(memcpy_toiovecend);
 
+#ifdef CONFIG_VFS_FASTPATH
+//Patch by G2NAS:enhance performance from socket to file
+/* this was removed in 2.6. Re-add it because we beed it in recvfile. */
+/*
+ *      In kernel copy to iovec. Returns -EFAULT on error.
+ *
+ *      Note: this modifies the original iovec.
+ */
+
+void memcpy_tokerneliovec(struct iovec *iov, unsigned char *kdata, int len)
+{
+        while(len>0)
+        {
+                if(iov->iov_len)
+                {
+                        int copy = min_t(unsigned int, iov->iov_len, len);
+                        memcpy(iov->iov_base, kdata, copy);
+                        kdata+=copy;
+                        len-=copy;
+                        iov->iov_len-=copy;
+                        iov->iov_base+=copy;
+                }
+                iov++;
+        }
+}
+EXPORT_SYMBOL(memcpy_tokerneliovec);
+#endif
+
 /*
  *	Copy iovec to kernel. Returns -EFAULT on error.
  *

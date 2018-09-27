@@ -73,6 +73,10 @@
 #include "sierra_ms.h"
 #include "option_ms.h"
 
+#ifdef CONFIG_ARCH_GOLDENGATE
+#include <mach/gpio_alloc.h>
+#endif /* CONFIG_ARCH_GOLDENGATE */
+
 /* Some informational data */
 MODULE_AUTHOR("Matthew Dharm <mdharm-usb@one-eyed-alien.net>");
 MODULE_DESCRIPTION("USB Mass Storage driver for Linux");
@@ -86,6 +90,22 @@ static char quirks[128];
 module_param_string(quirks, quirks, sizeof(quirks), S_IRUGO | S_IWUSR);
 MODULE_PARM_DESC(quirks, "supplemental list of device IDs and their quirks");
 
+#if defined(GPIO_USB_STORAGE_LED_0) || defined(GPIO_USB_STORAGE_LED_1)
+spinlock_t usbled_lock;
+unsigned long usbled_flags;
+
+int usbled_id[2];
+int usbled_start[2];
+int usbled_status[2];
+int usbled_count[2];
+int usbled_idle_count[2];
+
+EXPORT_SYMBOL(usbled_id);
+EXPORT_SYMBOL(usbled_start);
+EXPORT_SYMBOL(usbled_status);
+EXPORT_SYMBOL(usbled_lock);
+
+#endif
 
 /*
  * The entries in this table correspond, line for line,
@@ -143,6 +163,79 @@ static struct us_unusual_dev for_dynamic_ids =
 #undef COMPLIANT_DEV
 #undef USUAL_DEV
 #undef UNUSUAL_VENDOR_INTF
+
+#if defined(GPIO_USB_STORAGE_LED_0) || defined(GPIO_USB_STORAGE_LED_1)
+static int usb_stor_led_thread(void * __us, int usb_id)
+{
+	struct us_data *us = (struct us_data *) __us;
+	int idle_count;
+
+	usbled_status[usb_id] = 0;
+	gpio_set_value(usbled_id[usb_id], usbled_status[usb_id]);
+
+	idle_count = 0;
+
+	for(;;)
+	{
+		spin_lock(&usbled_lock);
+
+		/* disconnect detect */
+		if (test_bit(US_FLIDX_DISCONNECTING, &us->dflags))
+		{
+			usbled_start[usb_id] = 0;
+			usbled_status[usb_id] = 0;
+			gpio_set_value(usbled_id[usb_id], usbled_status[usb_id]);
+
+			spin_unlock(&usbled_lock);
+			break;
+		}
+
+		/* idle detect */
+		if (usbled_start[usb_id]) {
+			if (usbled_idle_count[usb_id]) {
+				usbled_idle_count[usb_id] = 0;
+			} else {
+				if (idle_count < 2) {
+					idle_count++;
+				} else {
+					usbled_status[usb_id] = 1;
+					gpio_set_value(usbled_id[usb_id], usbled_status[usb_id]);
+
+					idle_count = 0;
+				}
+			}
+		}
+
+		spin_unlock(&usbled_lock);
+
+		msleep_interruptible(100);
+	}
+
+/*	scsi_host_put(host);*/
+
+	return 0;
+}
+
+#ifdef GPIO_USB_STORAGE_LED_0
+static int usb_stor_led_thread_0(void * __us)
+{
+	int usb_id;
+
+	usb_id = 0;
+	return usb_stor_led_thread(__us, usb_id);
+}
+#endif
+
+#ifdef GPIO_USB_STORAGE_LED_1
+static int usb_stor_led_thread_1(void * __us)
+{
+	int usb_id;
+
+	usb_id = 1;
+	return usb_stor_led_thread(__us, usb_id);
+}
+#endif
+#endif
 
 #ifdef CONFIG_LOCKDEP
 
@@ -1019,6 +1112,60 @@ int usb_stor_probe2(struct us_data *us)
 		dev_dbg(dev, "waiting for device to settle before scanning\n");
 	queue_delayed_work(system_freezable_wq, &us->scan_dwork,
 			delay_use * HZ);
+
+#if defined(GPIO_USB_STORAGE_LED_0) || defined(GPIO_USB_STORAGE_LED_1)
+{
+	int usb_id;
+	struct task_struct *usbled_th;
+
+#ifdef GPIO_USB_STORAGE_LED_0
+	if (!strncmp(us->pusb_dev->devpath, "1.", strlen("1.")) ||
+	    (!strncmp(us->pusb_dev->devpath, "1", strlen("1")) && (us->pusb_dev->portnum == 1))) {
+		usb_id = 0;
+
+		usbled_id[usb_id] = GPIO_USB_STORAGE_LED_0;
+		usbled_start[usb_id] = 0;
+		usbled_status[usb_id] = 0;
+		usbled_count[usb_id] = 0;
+		usbled_idle_count[usb_id] = 0;
+
+		usbled_th = kthread_create(usb_stor_led_thread_0, us, "usb-stor-led_0");
+		if (IS_ERR(usbled_th)) {
+			printk("%s:kthread_create(usb-stor-led) fail\n", __FUNCTION__);
+			return PTR_ERR(usbled_th);
+		}
+
+/*		scsi_host_get(us_to_host(us));*/
+
+		wake_up_process(usbled_th);
+	}
+#endif
+
+#ifdef GPIO_USB_STORAGE_LED_1
+	if (!strncmp(us->pusb_dev->devpath, "2.", strlen("2.")) ||
+	    (!strncmp(us->pusb_dev->devpath, "2", strlen("2")) && (us->pusb_dev->portnum == 2))) {
+		usb_id = 1;
+
+		usbled_id[usb_id] = GPIO_USB_STORAGE_LED_1;
+		usbled_start[usb_id] = 0;
+		usbled_status[usb_id] = 0;
+		usbled_count[usb_id] = 0;
+		usbled_idle_count[usb_id] = 0;
+
+		usbled_th = kthread_create(usb_stor_led_thread_1, us, "usb-stor-led_1");
+		if (IS_ERR(usbled_th)) {
+			printk("%s:kthread_create(usb-stor-led) fail\n", __FUNCTION__);
+			return PTR_ERR(usbled_th);
+		}
+
+/*		scsi_host_get(us_to_host(us));*/
+
+		wake_up_process(usbled_th);
+	}
+#endif
+}
+#endif
+
 	return 0;
 
 	/* We come here if there are any problems */
@@ -1117,6 +1264,34 @@ static int __init usb_stor_init(void)
 	if (retval == 0) {
 		pr_info("USB Mass Storage support registered.\n");
 		usb_usual_set_present(USB_US_TYPE_STOR);
+
+#if defined(GPIO_USB_STORAGE_LED_0) || defined(GPIO_USB_STORAGE_LED_1)
+{
+		int usb_id;
+
+#ifdef GPIO_USB_STORAGE_LED_0
+		usb_id = 0;
+
+		usbled_id[usb_id] = GPIO_USB_STORAGE_LED_0;
+		usbled_start[usb_id] = 0;
+		usbled_status[usb_id] = 0;
+		usbled_count[usb_id] = 0;
+		usbled_idle_count[usb_id] = 0;
+#endif
+
+#ifdef GPIO_USB_STORAGE_LED_1
+		usb_id = 1;
+
+		usbled_id[usb_id] = GPIO_USB_STORAGE_LED_1;
+		usbled_start[usb_id] = 0;
+		usbled_status[usb_id] = 0;
+		usbled_count[usb_id] = 0;
+		usbled_idle_count[usb_id] = 0;
+#endif
+
+		spin_lock_init(&usbled_lock);
+}
+#endif
 	}
 	return retval;
 }

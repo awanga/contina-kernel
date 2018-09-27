@@ -250,3 +250,24 @@ config UML_RANDOM
 	  (check your distro, or download from
 	  http://sourceforge.net/projects/gkernel/).  rngd periodically reads
 	  /dev/hwrng and injects the entropy into /dev/random.
+
+config HW_RANDOM_CS75XX
+	tristate "Cortina CS75XX Random Number Generator support"
+	depends on ARCH_GOLDENGATE && HW_RANDOM
+	---help---
+	  This driver provides kernel-side support for the Random Number
+	  Generator hardware found on CS75XX Gate processors.
+
+	  To compile this driver as a module, choose M here: the
+	  module will be called cs75xx-rng.
+
+	  If unsure, say Y.
+	  
+
+
+config CS75XX_TRNG_DIAG_ON
+	tristate "Diagnostics"
+	default n
+	depends on HW_RANDOM_CS75XX
+	---help---
+	  Turn on diagnostics

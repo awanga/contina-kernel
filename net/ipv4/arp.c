@@ -117,6 +117,15 @@
 
 #include <linux/netfilter_arp.h>
 
+#ifdef CONFIG_CS752X_HW_ACCELERATION
+extern void cs_neigh_update_used(void *data);
+#endif
+
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+#include <mach/cs_kernel_hook_api.h>
+#endif
+
+
 /*
  *	Interface to generic neighbour cache.
  */
@@ -1319,6 +1328,10 @@ static char *ax2asc2(ax25_address *a, char *buf)
 
 #define HBUFFERLEN 30
 
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+void cs_call_kho_neigh_update_used(struct neighbour *n);
+#endif
+
 static void arp_format_neigh_entry(struct seq_file *seq,
 				   struct neighbour *n)
 {
@@ -1329,6 +1342,21 @@ static void arp_format_neigh_entry(struct seq_file *seq,
 	int hatype = dev->type;
 
 	read_lock(&n->lock);
+
+#ifdef CONFIG_CS752X_HW_ACCELERATION
+	/* Cortina Acceleration
+	 * Update HW info to this neighbour entry */
+	/* seq_printf(seq, "%s:%d: ip = %pI4 (0x%x)\n",
+		__func__, __LINE__, n->primary_key, *(int *) (n->primary_key));
+	 */
+	cs_neigh_update_used((void *)n);
+#endif
+
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+	cs_call_kho_neigh_update_used(n);
+#endif
+
+
 	/* Convert hardware address to XX:XX:XX:XX ... form. */
 #if IS_ENABLED(CONFIG_AX25)
 	if (hatype == ARPHRD_AX25 || hatype == ARPHRD_NETROM)

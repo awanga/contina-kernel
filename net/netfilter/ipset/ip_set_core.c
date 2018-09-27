@@ -42,6 +42,8 @@ MODULE_AUTHOR("Jozsef Kadlecsik <kadlec@blackhole.kfki.hu>");
 MODULE_DESCRIPTION("core IP set support");
 MODULE_ALIAS_NFNL_SUBSYS(NFNL_SUBSYS_IPSET);
 
+void (*ip_set_modified)(struct net *, u16, void *, void *) = NULL;
+
 /*
  * The set types are implemented in modules and registered set types
  * can be found in ip_set_type_list. Adding/deleting types is

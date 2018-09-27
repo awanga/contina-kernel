@@ -277,12 +277,22 @@
 
 static       char fsg_string_manufacturer[64];
 static const char fsg_string_product[] = DRIVER_DESC;
+#ifdef CONFIG_ARCH_GOLDENGATE
+static       char fsg_string_serial[13];
+#endif /* CONFIG_ARCH_GOLDENGATE */
 static const char fsg_string_config[] = "Self-powered";
 static const char fsg_string_interface[] = "Mass Storage";
 
 
 #include "storage_common.c"
 
+
+#ifdef CONFIG_USB_GADGET_SNPS_DWC_OTG
+static const char EP_BULK_IN_NAME[] = "ep1in";
+static const char EP_BULK_OUT_NAME[] = "ep1out";
+static const char EP_INTR_IN_NAME[] = "ep3in";
+#define FS_BULK_OUT_MAXPACKET		64
+#endif
 
 MODULE_DESCRIPTION(DRIVER_DESC);
 MODULE_AUTHOR("Alan Stern");
@@ -329,12 +339,22 @@ static struct {
 } mod_data = {					// Default values
 	.transport_parm		= "BBB",
 	.protocol_parm		= "SCSI",
+#ifndef CONFIG_USB_GADGET_SNPS_DWC_OTG
 	.removable		= 0,
 	.can_stall		= 1,
+#else
+	.removable		= 1,
+	.can_stall		= 0,
+#endif
 	.cdrom			= 0,
 	.vendor			= FSG_VENDOR_ID,
 	.product		= FSG_PRODUCT_ID,
+#ifndef CONFIG_USB_GADGET_SNPS_DWC_OTG
 	.release		= 0xffff,	// Use controller chip type
+#else
+	.release		= FSG_RELEASE,	// Use controller chip type
+	.serial			= FSG_SERIAL,
+#endif
 	.buflen			= 16384,
 	};
 
@@ -552,6 +572,9 @@ device_desc = {
 	.bDeviceClass =		USB_CLASS_PER_INTERFACE,
 
 	/* The next three values can be overridden by module parameters */
+#ifdef CONFIG_USB_GADGET_SNPS_DWC_OTG
+	.bMaxPacketSize0 = cpu_to_le16(0x40),
+#endif
 	.idVendor =		cpu_to_le16(FSG_VENDOR_ID),
 	.idProduct =		cpu_to_le16(FSG_PRODUCT_ID),
 	.bcdDevice =		cpu_to_le16(0xffff),
@@ -572,7 +595,11 @@ config_desc = {
 	.bConfigurationValue =	CONFIG_VALUE,
 	.iConfiguration =	FSG_STRING_CONFIG,
 	.bmAttributes =		USB_CONFIG_ATT_ONE | USB_CONFIG_ATT_SELFPOWER,
+#ifndef CONFIG_USB_GADGET_SNPS_DWC_OTG
 	.bMaxPower =		CONFIG_USB_GADGET_VBUS_DRAW / 2,
+#else
+	.bMaxPower =		0,
+#endif
 };
 
 
@@ -584,6 +611,9 @@ dev_qualifier = {
 	.bcdUSB =		cpu_to_le16(0x0200),
 	.bDeviceClass =		USB_CLASS_PER_INTERFACE,
 
+#ifdef CONFIG_USB_GADGET_SNPS_DWC_OTG
+	.bMaxPacketSize0 = __constant_cpu_to_le16(0x40),
+#endif
 	.bNumConfigurations =	1,
 };
 
@@ -601,6 +631,7 @@ static int populate_bos(struct fsg_dev *fsg, u8 *buf)
 		+ USB_DT_USB_EXT_CAP_SIZE;
 }
 
+#ifndef CONFIG_USB_GADGET_SNPS_DWC_OTG
 /*
  * Config descriptors must agree with the code that sets configurations
  * and with code managing interfaces and their altsettings.  They must
@@ -630,6 +661,90 @@ static int populate_config_buf(struct usb_gadget *gadget,
 	((struct usb_config_descriptor *) buf)->bDescriptorType = type;
 	return len;
 }
+#else	/* CONFIG_USB_GADGET_SNPS_DWC_OTG */
+/*Stone Add*/
+/* ========================================================================== */
+static int populate_config_buf(struct usb_gadget *gadget,
+		u8 *buf0, u8 type, unsigned index)
+{
+	u8	*buf = buf0;
+#ifdef CONFIG_USB_GADGET_DUALSPEED
+	enum usb_device_speed			speed = gadget->speed = USB_SPEED_HIGH;
+	int	hs;
+#endif
+	int					len;
+
+
+	if (index > 0)
+		return -EINVAL;
+#if 0
+	const struct usb_descriptor_header	**function;
+#ifdef CONFIG_USB_GADGET_DUALSPEED
+	if (type == USB_DT_OTHER_SPEED_CONFIG)
+		speed = (USB_SPEED_FULL + USB_SPEED_HIGH) - speed;
+	if (speed == USB_SPEED_HIGH)
+		function = hs_function;
+	else
+#endif
+		function = fs_function;
+
+	/* for now, don't advertise srp-only devices */
+	if (!gadget->is_otg)
+		function++;
+
+	len = usb_gadget_config_buf(&config_desc, buf0, EP0_BUFSIZE, function);
+	((struct usb_config_descriptor *) buf)->bDescriptorType = type;
+	return len;
+#endif /*if 0 end*/
+
+	if (config_desc.wTotalLength  > EP0_BUFSIZE)
+		return -EDOM;
+	/*printk("%s : config_desc.wTotalLength %x \n",__func__,config_desc.wTotalLength);*/
+	/* Config (or other speed config) */
+	memcpy(buf, &config_desc, USB_DT_CONFIG_SIZE);
+	buf[1] = type;
+	buf += USB_DT_CONFIG_SIZE;
+
+	/* Interface */
+	memcpy(buf, &fsg_intf_desc, USB_DT_INTERFACE_SIZE);
+	buf += USB_DT_INTERFACE_SIZE;
+
+	/* The endpoints in the interface (at that speed) */
+/*#ifdef CONFIG_USB_GADGET_DUALSPEED*/
+	hs = (speed == USB_SPEED_HIGH);
+/*	if (type == USB_DT_OTHER_SPEED_CONFIG)*/
+/*		hs = !hs;*/
+	if (hs) {
+		memcpy(buf, &fsg_hs_bulk_in_desc, USB_DT_ENDPOINT_SIZE);
+		buf += USB_DT_ENDPOINT_SIZE;
+		memcpy(buf, &fsg_hs_bulk_out_desc, USB_DT_ENDPOINT_SIZE);
+		buf += USB_DT_ENDPOINT_SIZE;
+		if (transport_is_cbi()) {
+			memcpy(buf, &fsg_hs_intr_in_desc, USB_DT_ENDPOINT_SIZE);
+			buf += USB_DT_ENDPOINT_SIZE;
+		}
+	} else
+/*#endif*/
+	{
+		memcpy(buf, &fsg_fs_bulk_in_desc, USB_DT_ENDPOINT_SIZE);
+		buf += USB_DT_ENDPOINT_SIZE;
+		memcpy(buf, &fsg_fs_bulk_out_desc, USB_DT_ENDPOINT_SIZE);
+		buf += USB_DT_ENDPOINT_SIZE;
+		if (transport_is_cbi()) {
+			memcpy(buf, &fsg_fs_intr_in_desc, USB_DT_ENDPOINT_SIZE);
+			buf += USB_DT_ENDPOINT_SIZE;
+		}
+	}
+
+/*For OTG;;Start*/
+	memcpy(buf, &fsg_otg_desc, USB_DT_CONFIG_SIZE);
+	buf += 3;
+/*For OTG;;end*/
+
+	return buf - buf0;
+}
+/* ========================================================================== */
+#endif	/* CONFIG_USB_GADGET_SNPS_DWC_OTG */
 
 
 /*-------------------------------------------------------------------------*/
@@ -944,6 +1059,9 @@ static int standard_setup_req(struct fsg_dev *fsg,
 			VDBG(fsg, "get device descriptor\n");
 			device_desc.bMaxPacketSize0 = fsg->ep0->maxpacket;
 			value = sizeof device_desc;
+#ifdef CONFIG_USB_GADGET_SNPS_DWC_OTG
+			value = min(ctrl->wLength, (u16) sizeof device_desc);
+#endif
 			memcpy(req->buf, &device_desc, value);
 			break;
 		case USB_DT_DEVICE_QUALIFIER:
@@ -973,6 +1091,10 @@ get_config:
 					req->buf,
 					w_value >> 8,
 					w_value & 0xff);
+#ifdef CONFIG_USB_GADGET_SNPS_DWC_OTG
+			if (value >= 0)
+				value = min(ctrl->wLength, (u16) value);
+#endif
 			break;
 
 		case USB_DT_STRING:
@@ -981,6 +1103,10 @@ get_config:
 			/* wIndex == language code */
 			value = usb_gadget_get_string(&fsg_stringtab,
 					w_value & 0xff, req->buf);
+#ifdef CONFIG_USB_GADGET_SNPS_DWC_OTG
+			if (value >= 0)
+				value = min(ctrl->wLength, (u16) value);
+#endif
 			break;
 
 		case USB_DT_BOS:
@@ -1063,6 +1189,9 @@ static int fsg_setup(struct usb_gadget *gadget,
 	int			rc;
 	int			w_length = le16_to_cpu(ctrl->wLength);
 
+#ifdef CONFIG_USB_GADGET_SNPS_DWC_OTG
+	fsg->ep0 = gadget->ep0;
+#endif
 	++fsg->ep0_req_tag;		// Record arrival of a new request
 	fsg->ep0req->context = NULL;
 	fsg->ep0req->length = 0;
@@ -3320,7 +3449,12 @@ static int __init check_parameters(struct fsg_dev *fsg)
 			WARNING(fsg, "Invalid serial string length!\n");
 			goto no_serial;
 		}
+#ifndef CONFIG_USB_GADGET_SNPS_DWC_OTG
 		fsg_strings[FSG_STRING_SERIAL - 1].s = mod_data.serial;
+#else
+		snprintf(fsg_string_serial, sizeof(fsg_string_serial),
+			 "%s", mod_data.serial);
+#endif
 	} else {
 		WARNING(fsg, "No serial-number string provided!\n");
  no_serial:
@@ -3342,9 +3476,17 @@ static int __init fsg_bind(struct usb_gadget *gadget)
 	char			*pathbuf, *p;
 
 	fsg->gadget = gadget;
+#ifdef CONFIG_ARCH_GOLDENGATE
+//#ifdef CONFIG_USB_GADGET_SNPS_DWC_OTG
+	fsg->gadget->dev = gadget->dev;
+//#endif
+#endif /* CONFIG_ARCH_GOLDENGATE */
 	set_gadget_data(gadget, fsg);
 	fsg->ep0 = gadget->ep0;
 	fsg->ep0->driver_data = fsg;
+#ifdef CONFIG_USB_GADGET_SNPS_DWC_OTG
+	gadget->speed = USB_SPEED_HIGH;
+#endif
 
 	if ((rc = check_parameters(fsg)) != 0)
 		goto out;
@@ -3425,6 +3567,8 @@ static int __init fsg_bind(struct usb_gadget *gadget)
 		}
 	}
 
+#ifndef CONFIG_USB_GADGET_SNPS_DWC_OTG
+/*Stone Add*/
 	/* Find all the endpoints we will use */
 	usb_ep_autoconfig_reset(gadget);
 	ep = usb_ep_autoconfig(gadget, &fsg_fs_bulk_in_desc);
@@ -3446,6 +3590,55 @@ static int __init fsg_bind(struct usb_gadget *gadget)
 		ep->driver_data = fsg;		// claim the endpoint
 		fsg->intr_in = ep;
 	}
+/*Stone Add*/
+#else	/* CONFIG_USB_GADGET_SNPS_DWC_OTG */
+/*Stone Add*/
+/* ========================================================================== */
+	i = (transport_is_cbi() ? 3 : 2);	/* Number of endpoints */
+	config_desc.wTotalLength = USB_DT_CONFIG_SIZE + USB_DT_INTERFACE_SIZE
+			+ USB_DT_ENDPOINT_SIZE * i;
+
+/*For OTG*/
+	config_desc.wTotalLength +=3;
+/*For OTG*/
+
+/*	printk( "fsg_bind=>Find all the endpoints we will use \n");*//*Bruce*/
+	printk("******gadget %x gadget->ep_list %x \n",gadget,gadget->ep_list);
+	/* Find all the endpoints we will use */
+	i=0;
+	gadget_for_each_ep(ep, gadget) {
+/*		i++;*/
+		printk("%s : gadget_for_each_ep i=%x ep->name=%s ep->name %x ep %x \n", __func__, i, ep->name,ep->name,ep);/*Bruce*/
+
+		if (strcmp(ep->name, EP_BULK_IN_NAME) == 0) {
+			fsg->bulk_in = ep;
+			printk("fsg_bind=> Found BULK_IN ED \n");/*Bruce*/
+		} else if (strcmp(ep->name, EP_BULK_OUT_NAME) == 0) {
+			fsg->bulk_out = ep;
+			printk("fsg_bind=> Found BULK_OUT ED \n");/*Bruce*/
+		} else if (strcmp(ep->name, EP_INTR_IN_NAME) == 0) {
+			fsg->intr_in = ep;
+			printk("fsg_bind=> Found INTR_IN ED \n");/*Bruce*/
+		}
+		i++;
+		if (i>4)  /*Bruce;;Modify*/
+			break; /*Bruce;;Modify*/
+	}
+
+	printk("Check the ed type \n");/*Bruce*/
+
+	if (!fsg->bulk_in || !fsg->bulk_out ||
+	    (transport_is_cbi() && !fsg->intr_in)) {
+		printk("unable to find all endpoints\n");
+		printk("fsg->bulk_in %x fsg->bulk_out %x fsg->intr_in %x \n",fsg->bulk_in,fsg->bulk_out,fsg->intr_in);
+		DBG(fsg, "unable to find all endpoints\n");
+		rc = -ENOTSUPP;
+		goto out;
+	}
+	fsg->bulk_out_maxpacket = (gadget->speed == USB_SPEED_HIGH ? 512 :
+			FS_BULK_OUT_MAXPACKET);
+/* ========================================================================== */
+#endif	/* CONFIG_USB_GADGET_SNPS_DWC_OTG */
 
 	/* Fix up the descriptors */
 	device_desc.idVendor = cpu_to_le16(mod_data.vendor);
@@ -3519,10 +3712,15 @@ static int __init fsg_bind(struct usb_gadget *gadget)
 	/* This should reflect the actual gadget power source */
 	usb_gadget_set_selfpowered(gadget);
 
+#ifndef CONFIG_USB_GADGET_SNPS_DWC_OTG
 	snprintf(fsg_string_manufacturer, sizeof fsg_string_manufacturer,
 			"%s %s with %s",
 			init_utsname()->sysname, init_utsname()->release,
 			gadget->name);
+#else
+	snprintf(fsg_string_manufacturer, sizeof(fsg_string_manufacturer),
+			"%s", FSG_MANUFACTURER);
+#endif
 
 	fsg->thread_task = kthread_create(fsg_main_thread, fsg,
 			"file-storage-gadget");

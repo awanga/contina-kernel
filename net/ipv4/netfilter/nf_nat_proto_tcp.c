@@ -19,6 +19,10 @@
 #include <net/netfilter/nf_nat_protocol.h>
 #include <net/netfilter/nf_nat_core.h>
 
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+#include <mach/cs_kernel_hook_api.h>
+#endif
+
 static u_int16_t tcp_port_rover;
 
 static void
@@ -69,6 +73,27 @@ tcp_manip_pkt(struct sk_buff *skb,
 		portptr = &hdr->dest;
 	}
 
+#ifdef CONFIG_LYNXE_KERNEL_HOOK 	
+	{
+		int bypass_alg = 0;
+
+		if (cs_kernel_hook_ops.kho_bypass_tcp_portlist_exist != NULL) {
+			if (cs_kernel_hook_ops.kho_bypass_tcp_portlist_exist(ntohs(hdr->source)))
+				bypass_alg = 1;
+			if (cs_kernel_hook_ops.kho_bypass_tcp_portlist_exist(ntohs(tuple->src.u.tcp.port)))
+				bypass_alg = 1;
+			if (cs_kernel_hook_ops.kho_bypass_tcp_portlist_exist(ntohs(hdr->dest)))
+				bypass_alg = 1;
+			if (cs_kernel_hook_ops.kho_bypass_tcp_portlist_exist(ntohs(tuple->dst.u.tcp.port)))
+				bypass_alg = 1;
+		}
+		if ((bypass_alg == 0) && (skb->dev->name != NULL)) {
+        		if (cs_kernel_hook_ops.kho_nat_entry_add != NULL) 
+                		cs_kernel_hook_ops.kho_nat_entry_add(0, 1, (maniptype == NF_NAT_MANIP_SRC) ? 1 : 0, iph->saddr, tuple->src.u3.ip, iph->daddr, tuple->dst.u3.ip,
+                        		                        hdr->source, tuple->src.u.tcp.port, hdr->dest, tuple->dst.u.tcp.port);
+		}	
+	}
+#endif
 	oldport = *portptr;
 	*portptr = newport;
 

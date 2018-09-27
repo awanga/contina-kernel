@@ -54,6 +54,10 @@
 #include <net/net_namespace.h>
 #include <net/netns/generic.h>
 
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+#include <mach/cs_kernel_hook_api.h>
+#endif
+
 MODULE_AUTHOR("Ville Nuorvala");
 MODULE_DESCRIPTION("IPv6 tunneling device");
 MODULE_LICENSE("GPL");
@@ -270,6 +274,10 @@ static struct ip6_tnl *ip6_tnl_create(struct net *net, struct ip6_tnl_parm *p)
 	int err;
 	struct ip6_tnl_net *ip6n = net_generic(net, ip6_tnl_net_id);
 
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+	struct rt6_info *rt;
+#endif
+
 	if (p->name[0])
 		strlcpy(name, p->name, IFNAMSIZ);
 	else
@@ -294,6 +302,22 @@ static struct ip6_tnl *ip6_tnl_create(struct net *net, struct ip6_tnl_parm *p)
 
 	dev_hold(dev);
 	ip6_tnl_link(ip6n, t);
+
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+        if (t->parms.flags & IP6_TNL_F_CAP_XMIT) {
+                int strict = (ipv6_addr_type(&t->parms.raddr) & (IPV6_ADDR_MULTICAST | IPV6_ADDR_LINKLOCAL));
+		struct in6_addr *raddr = &(t->parms.raddr);
+		struct in6_addr *laddr = &(t->parms.laddr);
+
+		printk("%s: dev->name=%s, raddr[0-3]=0x%x-0x%x-0x%x-0x%x, laddr[0-3]=0x%x-0x%x-0x%x-0x%x\n", __func__,
+			dev->name, raddr->s6_addr32[0], raddr->s6_addr32[1], raddr->s6_addr32[2], raddr->s6_addr32[3],
+			laddr->s6_addr32[0], laddr->s6_addr32[1], laddr->s6_addr32[2], laddr->s6_addr32[3]); 
+
+		if (cs_kernel_hook_ops.kho_dslite_add != NULL)
+                	cs_kernel_hook_ops.kho_dslite_add(0, dev->ifindex, 0, &(t->parms.laddr.s6_addr32[0]), &(t->parms.raddr.s6_addr32[0]));
+        }
+#endif
+
 	return t;
 
 failed_free:
@@ -1333,6 +1357,12 @@ ip6_tnl_ioctl(struct net_device *dev, struct ifreq *ifr, int cmd)
 			dev = t->dev;
 		}
 		err = 0;
+
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+		if (cs_kernel_hook_ops.kho_dslite_delete != NULL)
+                	cs_kernel_hook_ops.kho_dslite_delete(0, dev->ifindex);
+#endif
+
 		unregister_netdevice(dev);
 		break;
 	default:
@@ -1476,12 +1506,24 @@ static void __net_exit ip6_tnl_destroy_tunnels(struct ip6_tnl_net *ip6n)
 	for (h = 0; h < HASH_SIZE; h++) {
 		t = rtnl_dereference(ip6n->tnls_r_l[h]);
 		while (t != NULL) {
+
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+        if (cs_kernel_hook_ops.kho_dslite_delete != NULL)
+                cs_kernel_hook_ops.kho_dslite_delete(0, t->dev->ifindex);
+#endif
+
 			unregister_netdevice_queue(t->dev, &list);
 			t = rtnl_dereference(t->next);
 		}
 	}
 
 	t = rtnl_dereference(ip6n->tnls_wc[0]);
+
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+        if (cs_kernel_hook_ops.kho_dslite_delete != NULL)
+                cs_kernel_hook_ops.kho_dslite_delete(0, t->dev->ifindex);
+#endif
+
 	unregister_netdevice_queue(t->dev, &list);
 	unregister_netdevice_many(&list);
 }

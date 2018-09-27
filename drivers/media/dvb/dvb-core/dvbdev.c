@@ -54,7 +54,11 @@ static const char * const dnames[] = {
 #define MAX_DVB_MINORS		256
 #define DVB_MAX_IDS		MAX_DVB_MINORS
 #else
+#if defined(CONFIG_DVB_CS75XX_TS) || defined(CONFIG_DVB_CS75XX_TS_MODULE)
+#define DVB_MAX_IDS             12
+#else
 #define DVB_MAX_IDS		4
+#endif
 #define nums2minor(num,type,id)	((num << 6) | (id << 4) | type)
 #define MAX_DVB_MINORS		(DVB_MAX_ADAPTERS*64)
 #endif

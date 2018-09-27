@@ -800,8 +800,16 @@ static int ohci_hub_control (
 				ohci->start_hnp(ohci);
 			else
 #endif
+#ifndef CONFIG_CORTINA_DISABLE_USB_PHY0_CLOCK
 			ohci_writel (ohci, RH_PS_PSS,
 				&ohci->regs->roothub.portstatus [wIndex]);
+#else
+			if (wIndex == 0)
+				printk("%s:ohci suspend work around\n", __FUNCTION__);
+			else
+				ohci_writel (ohci, RH_PS_PSS,
+					&ohci->regs->roothub.portstatus [wIndex]);
+#endif
 			break;
 		case USB_PORT_FEAT_POWER:
 			ohci_writel (ohci, RH_PS_PPS,

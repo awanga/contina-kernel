@@ -95,6 +95,20 @@ struct tc_sizespec {
 	unsigned int	tsize;
 };
 
+#ifdef CONFIG_ARCH_GOLDENGATE
+struct tc_wredspec {
+	__u8 enbl;
+	__u8 min_pct_base;
+	__u8 max_pct_base;
+	__u8 min_pct_buffer;
+	__u8 max_pct_buffer;
+	__u8 drop_prob;
+	__u8 aqd_lp_filter_const;
+};
+
+#define TC_WREDTAB_SIZE	1024
+#endif /* CONFIG_ARCH_GOLDENGATE */
+
 enum {
 	TCA_STAB_UNSPEC,
 	TCA_STAB_BASE,
@@ -122,10 +136,55 @@ struct tc_prio_qopt {
 
 /* MULTIQ section */
 
+#ifndef CONFIG_CORTINA_GKCI
 struct tc_multiq_qopt {
 	__u16	bands;			/* Number of bands */
 	__u16	max_bands;		/* Maximum number of queues */
 };
+#else /* CONFIG_CORTINA_GKCI */
+#define TCQ_MULTIQ_NOT_SET32	0xffffffff
+#define TCQ_MULTIQ_NOT_SET16	0xffff
+#define TCQ_MULTIQ_NOT_SET8	0xff
+
+struct tc_multiq_qopt {
+	__u16	bands;			/* Number of bands */
+	__u16	max_bands;		/* Maximum number of queues */
+	__u32	burst_size;
+	struct tc_ratespec rate;
+	__u16	min_global_buffer;
+	__u16	max_global_buffer;
+	__u8	wred_mode;
+	__u8	wred_adj_range_idx;
+};
+
+enum
+{
+	TCA_MULTIQ_UNSPEC,
+	TCA_MULTIQ_PARMS,
+	__TCA_MULTIQ_MAX,
+};
+
+#define TCA_MULTIQ_MAX	(__TCA_MULTIQ_MAX - 1)
+
+
+struct tc_multisubq_qopt {
+	__u32	limit;
+	__u32	rsrv_depth;
+	__u32	weight;
+	__u8	priority;
+	struct tc_ratespec rate;
+	struct tc_wredspec wred;
+};
+
+enum
+{
+	TCA_MULTISUBQ_UNSPEC,
+	TCA_MULTISUBQ_PARMS,
+	__TCA_MULTISUBQ_MAX,
+};
+
+#define TCA_MULTISUBQ_MAX	(__TCA_MULTISUBQ_MAX - 1)
+#endif /* CONFIG_CORTINA_GKCI */
 
 /* PLUG section */
 
@@ -653,5 +712,30 @@ struct tc_qfq_stats {
 	__u32 weight;
 	__u32 lmax;
 };
+
+#ifdef CONFIG_CORTINA_GKCI
+/* INGRESS */
+
+enum
+{
+	TCA_INGRESS_UNSPEC,
+	TCA_INGRESS_PARMS,
+	__TCA_INGRESS_MAX,
+};
+
+#define TCA_INGRESS_MAX	(__TCA_INGRESS_MAX - 1)
+#define TCQ_INGRESS_NOT_SET8	0xff
+#define TCQ_INGRESS_NOT_SET32	0xffffffff
+
+struct tc_ingress_qopt {
+	__u8	rate_enbl;
+	__u8	bypass_yellow;
+	__u8	bypass_red;
+	struct tc_ratespec rate;
+	__u32	cbs;
+	__u32	pbs;
+};
+
+#endif /* CONFIG_CORTINA_GKCI */
 
 #endif

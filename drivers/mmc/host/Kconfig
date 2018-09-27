@@ -609,3 +609,49 @@ config MMC_USHC
 
 	  Note: These controllers only support SDIO cards and do not
 	  support MMC or SD memory cards.
+
+config CS752X_SDIO
+	tristate "New Cortina Goldengate SD Card Reader Support"
+	depends on ARCH_GOLDENGATE && MACH_CORTINA_G2 && ((MMC_BLOCK && !MMC_TEST) || (!MMC_BLOCK && MMC_TEST))
+	help
+	  This option enable the sd controller of CS752X chipset.
+	  Don't select CS752X_SD together.
+	  This driver is new and based on MMC_DW
+	  Please turn on  MMC_DW , MMC_DW_IDMAC, and turn off MMC_DW_PLTFM
+	  It is an experimental option.
+
+	  If unsure, say N.
+
+config CS752X_SD
+	bool "Cortina Goldengate SD Card Reader Support"
+	depends on ARCH_GOLDENGATE && MACH_CORTINA_G2 && ((MMC_BLOCK && !MMC_TEST) || (!MMC_BLOCK && MMC_TEST))
+	select MMC_DW 
+	select MMC_DW_IDMAC
+	help
+	  This option enable the sd controller of CS752X chipset.
+	  If you have a board based on one of those and a SD slot, say Y here.
+
+	  If unsure, say N.
+
+config CS752X_SD_25MHZ
+	bool "SD host operating at 25MHz"
+	depends on CS752X_SD
+	default n
+	help
+	  This configure will change the operation frequency of sd host
+          controller to 25MHz.
+
+config CS752X_SD_DEBUG
+	bool "Enable printing SD driver debug message"
+	depends on CS752X_SD && MMC_DEBUG
+	default n
+	help
+	  If you want to print the sd driver debugging message, enable the option.
+
+config CS752X_SD_REQUEST_ONEPAGE
+	bool "Perform one page data transfer only"
+	depends on CS752X_SD && MMC_DEBUG
+	default n
+	help
+	  If you want to perform one page (4096 byte) data transfer, enable the option.
+

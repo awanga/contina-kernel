@@ -19,6 +19,10 @@
 #include <linux/skbuff.h>
 #include <linux/if_vlan.h>
 #include <linux/netfilter_bridge.h>
+#ifdef CONFIG_BRIDGE_PKT_FWD_FILTER
+#include <linux/export.h>
+#include <net/br_pkt_fwd_filter.h>
+#endif
 #include "br_private.h"
 
 static int deliver_clone(const struct net_bridge_port *prev,
@@ -79,21 +83,81 @@ static void __br_deliver(const struct net_bridge_port *to, struct sk_buff *skb)
 		br_forward_finish);
 }
 
+#ifdef CONFIG_BRIDGE_PKT_FWD_FILTER
+extern unsigned short vlan_dev_get_vid(struct net_device *dev);
+#endif
+
 static void __br_forward(const struct net_bridge_port *to, struct sk_buff *skb)
 {
 	struct net_device *indev;
+#ifdef CONFIG_BRIDGE_PKT_FWD_FILTER
+	int vid;
+	struct packet_fwd_filter *from_filter, *to_filter;
+	unsigned char from_grp, to_grp;
+#endif
 
 	if (skb_warn_if_lro(skb)) {
 		kfree_skb(skb);
 		return;
 	}
 
+#ifdef CONFIG_BRIDGE_PKT_FWD_FILTER
+	/* forwarding between the same group is denied */
+	from_grp = skb->dev->fwd_grp;
+	to_grp = to->dev->fwd_grp;
+	if (from_grp & to_grp)
+		goto out;
+
+	/*
+	 * Packets from LAN/WLAN to WAN is controlled as below.
+	 * Check if VID of egress port is belong to pkt_fwd_filter of
+	 * the ingress port. (1: forward, 0: drop)
+	 */
+	from_filter = skb->dev->pkt_fwd_filter;
+	if((to_grp & NETDEV_GRP_WAN) &&
+		(from_grp != NETDEV_GRP_IGNORE) &&
+		(from_filter)) {
+		if (to->dev->priv_flags & IFF_802_1Q_VLAN) {
+			vid = vlan_dev_get_vid(to->dev);
+			if (!(from_filter->vid_map[vid >> 3] & (1 << (vid & 0x07))))
+				goto out;
+		} else {
+			if (!(from_filter->vid_map[0] & 0x01))
+				goto out;
+		}
+	}
+	
+	/*
+	 * Packets from WAN to LAN/WLAN is controlled as below.
+	 * Check if VID of ingress port is belong to pkt_fwd_filter of
+	 * the egress port. (1: forward, 0: drop)
+	 */
+	to_filter = to->dev->pkt_fwd_filter;
+	if((from_grp & NETDEV_GRP_WAN) &&
+		(to_grp != NETDEV_GRP_IGNORE) &&
+		(to_filter)) {
+		if (skb->dev->priv_flags & IFF_802_1Q_VLAN) {
+			vid = vlan_dev_get_vid(skb->dev);
+			if (!(to_filter->vid_map[vid >> 3] & (1 << (vid & 0x07))))
+				goto out;
+		} else {
+			if (!(to_filter->vid_map[0] & 0x01))
+				goto out;
+		}
+	}
+#endif	
 	indev = skb->dev;
 	skb->dev = to->dev;
 	skb_forward_csum(skb);
 
 	NF_HOOK(NFPROTO_BRIDGE, NF_BR_FORWARD, skb, indev, skb->dev,
 		br_forward_finish);
+
+#ifdef CONFIG_BRIDGE_PKT_FWD_FILTER
+	return;
+out:
+	kfree_skb(skb);
+#endif
 }
 
 /* called with rcu_read_lock */
@@ -270,3 +334,168 @@ void br_multicast_forward(struct net_bridge_mdb_entry *mdst,
 	br_multicast_flood(mdst, skb, skb2, __br_forward);
 }
 #endif
+
+#ifdef CONFIG_BRIDGE_PKT_FWD_FILTER
+static long br_pkt_fwd_filter_ioctl(struct file *file,
+			  unsigned int cmd, unsigned long arg)
+{
+	void __user *argp = (void __user *)arg;
+	BR_FWD_PKT_FT_CMD_T br_cmd;
+	struct net_device *dev;
+	int i, vid, mode;
+
+	if (cmd != SIOCDEVPRIVATE) {
+	    printk("It is not private command (0x%X). cmd = (0x%X)\n",
+		    SIOCDEVPRIVATE, cmd);
+	    return -EOPNOTSUPP;
+	}
+
+	if (copy_from_user((void *)&br_cmd, argp, sizeof(br_cmd))) {
+	    printk("Copy from user space fail\n");
+	    return -EFAULT;
+	}
+
+	br_cmd.netdev_name[IFNAMSIZ-1] = '\0';
+	dev = dev_get_by_name(&init_net, br_cmd.netdev_name);
+	if(!dev) {
+		printk("Unknown net device: %s\n", br_cmd.netdev_name);
+		return -EPERM;
+	}
+
+	switch (br_cmd.cmd) {
+	case PKT_FWD_FT_RESET:
+		dev->fwd_grp = NETDEV_GRP_IGNORE;
+		if(dev->pkt_fwd_filter) {
+			kfree(dev->pkt_fwd_filter);
+			dev->pkt_fwd_filter = NULL;
+		}
+		break;
+		
+	case PKT_FWD_FT_RAW_SET:
+		dev->fwd_grp = br_cmd.fwd_grp;
+		if(!dev->pkt_fwd_filter) {
+			dev->pkt_fwd_filter = 
+				kmalloc(sizeof(struct packet_fwd_filter),
+					GFP_KERNEL);
+			if(!dev->pkt_fwd_filter) {
+				dev_put(dev);
+				return -ENOMEM;
+			}
+		}
+		memcpy(dev->pkt_fwd_filter->vid_map, br_cmd.vid_map,
+			BR_PKT_FWD_FT_VLAN_ARRAY_LEN);
+		break;
+		
+	case PKT_FWD_FT_RAW_GET:
+		br_cmd.fwd_grp = dev->fwd_grp;
+		if(dev->pkt_fwd_filter) {
+			memcpy(br_cmd.vid_map, dev->pkt_fwd_filter->vid_map,
+				BR_PKT_FWD_FT_VLAN_ARRAY_LEN);
+		} else {
+			for (i = 0; i < BR_PKT_FWD_FT_VLAN_ARRAY_LEN; i++)
+				br_cmd.vid_map[i] = 0xFF;
+		}
+
+		if (copy_to_user(argp, (void *)&br_cmd, sizeof(br_cmd))) {
+		    printk("Copy to user space fail\n");
+		    dev_put(dev);
+		    return -EFAULT;
+		}
+		
+		break;
+		
+	case PKT_FWD_FT_ETH_GRP_SET:
+		dev->fwd_grp = br_cmd.fwd_grp;
+		break;
+		
+	case PKT_FWD_FT_ETH_GRP_GET:
+		br_cmd.fwd_grp = dev->fwd_grp;
+
+		if (copy_to_user(argp, (void *)&br_cmd, sizeof(br_cmd))) {
+		    printk("Copy to user space fail\n");
+		    dev_put(dev);
+		    return -EFAULT;
+		}
+		
+		break;
+		
+	case PKT_FWD_FT_ETH_VLAN_SET:
+		if(!dev->pkt_fwd_filter) {
+			dev->pkt_fwd_filter = 
+				kzalloc(sizeof(struct packet_fwd_filter),
+					GFP_KERNEL);
+			if(!dev->pkt_fwd_filter) {
+				dev_put(dev);
+				return -ENOMEM;
+			}
+		}
+		/* translate VID to bit offset */
+		vid = br_cmd.vlan_mode.vid;
+		if (br_cmd.vlan_mode.mode)	/* 1: forward */
+			dev->pkt_fwd_filter->vid_map[vid >> 3] |=
+				(1 << (vid & 0x07));
+		else				/* 0: drop */
+			dev->pkt_fwd_filter->vid_map[vid >> 3] &=
+				~(1 << (vid & 0x07));
+		break;
+	case PKT_FWD_FT_ETH_VLAN_GET:
+		if(dev->pkt_fwd_filter) {
+			/* translate VID to bit offset */
+			vid = br_cmd.vlan_mode.vid;
+			if (dev->pkt_fwd_filter->vid_map[vid >> 3] &
+				(1 << (vid & 0x07)))	/* 1: forward */
+				br_cmd.vlan_mode.mode = 1;
+			else				/* 0: drop */
+				br_cmd.vlan_mode.mode = 0;
+			}
+
+		if (copy_to_user(argp, (void *)&br_cmd, sizeof(br_cmd))) {
+		    printk("Copy to user space fail\n");
+			dev_put(dev);
+			return -EFAULT;
+		}
+		
+		break;
+	default:
+		dev_put(dev);
+		return -EPERM;
+	}
+
+	dev_put(dev);
+	return 0;
+
+}
+
+static int br_pkt_fwd_filter_open(struct inode *inode, struct file *file)
+{
+	return 0;
+}
+
+static int br_pkt_fwd_filter_release(struct inode *inode, struct file *file)
+{
+	return 0;
+}
+
+static struct file_operations br_pkt_fwd_filter_fops = {
+	.owner = THIS_MODULE,
+	.unlocked_ioctl = br_pkt_fwd_filter_ioctl,
+	.open = br_pkt_fwd_filter_open,
+	.release = br_pkt_fwd_filter_release,
+};
+
+static struct miscdevice br_pkt_fwd_filter_miscdev = {
+	.minor = MISC_DYNAMIC_MINOR,
+	.name = BR_PKT_FWD_FT_DRIVER_NAME,
+	.fops = &br_pkt_fwd_filter_fops,
+};
+
+int br_pkt_fwd_filter_register(void)
+{
+	return misc_register(&br_pkt_fwd_filter_miscdev);
+}
+
+int br_pkt_fwd_filter_deregister(void)
+{
+	return misc_deregister(&br_pkt_fwd_filter_miscdev);
+}
+#endif /* CONFIG_BRIDGE_PKT_FWD_FILTER */

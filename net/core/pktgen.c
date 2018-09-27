@@ -3041,8 +3041,10 @@ static void pktgen_stop_all_threads_ifs(void)
 
 	mutex_lock(&pktgen_thread_lock);
 
-	list_for_each_entry(t, &pktgen_threads, th_list)
+	list_for_each_entry(t, &pktgen_threads, th_list) {
 		t->control |= T_STOP;
+		wake_up_interruptible(&t->queue);
+	}
 
 	mutex_unlock(&pktgen_thread_lock);
 }
@@ -3106,15 +3108,12 @@ static void pktgen_run_all_threads(void)
 
 	mutex_lock(&pktgen_thread_lock);
 
-	list_for_each_entry(t, &pktgen_threads, th_list)
+	list_for_each_entry(t, &pktgen_threads, th_list) {
 		t->control |= (T_RUN);
+		wake_up_interruptible(&t->queue);
+	}
 
 	mutex_unlock(&pktgen_thread_lock);
-
-	/* Propagate thread->control  */
-	schedule_timeout_interruptible(msecs_to_jiffies(125));
-
-	pktgen_wait_all_threads_run();
 }
 
 static void pktgen_reset_all_threads(void)
@@ -3125,15 +3124,12 @@ static void pktgen_reset_all_threads(void)
 
 	mutex_lock(&pktgen_thread_lock);
 
-	list_for_each_entry(t, &pktgen_threads, th_list)
+	list_for_each_entry(t, &pktgen_threads, th_list) {
 		t->control |= (T_REMDEVALL);
+		wake_up_interruptible(&t->queue);
+	}
 
 	mutex_unlock(&pktgen_thread_lock);
-
-	/* Propagate thread->control  */
-	schedule_timeout_interruptible(msecs_to_jiffies(125));
-
-	pktgen_wait_all_threads_run();
 }
 
 static void show_results(struct pktgen_dev *pkt_dev, int nr_frags)

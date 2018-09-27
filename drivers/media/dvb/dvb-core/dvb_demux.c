@@ -34,6 +34,10 @@
 
 #include "dvb_demux.h"
 
+#if defined(CONFIG_DVB_CS75XX_TS) || defined(CONFIG_DVB_CS75XX_TS_MODULE)
+#include "dmxdev.h"
+#endif
+
 #define NOBUFS
 /*
 ** #define DVB_DEMUX_SECTION_LOSS_LOG to monitor payload loss in the syslog
@@ -359,11 +363,15 @@ static inline void dvb_dmx_swfilter_packet_type(struct dvb_demux_feed *feed,
 		if (!feed->feed.ts.is_filtering)
 			break;
 		if (feed->ts_type & TS_PACKET) {
+#if defined(CONFIG_DVB_CS75XX_TS) || defined(CONFIG_DVB_CS75XX_TS_MODULE)
+ 			feed->cb.ts(buf, feed->buffer_size, NULL, 0, &feed->feed.ts, DMX_OK);
+#else
 			if (feed->ts_type & TS_PAYLOAD_ONLY)
 				dvb_dmx_swfilter_payload(feed, buf);
 			else
 				feed->cb.ts(buf, 188, NULL, 0, &feed->feed.ts,
 					    DMX_OK);
+#endif                          
 		}
 		if (feed->ts_type & TS_DECODER)
 			if (feed->demux->write_to_decoder)
@@ -392,6 +400,10 @@ static void dvb_dmx_swfilter_packet(struct dvb_demux *demux, const u8 *buf)
 	struct dvb_demux_feed *feed;
 	u16 pid = ts_pid(buf);
 	int dvr_done = 0;
+#if defined(CONFIG_DVB_CS75XX_TS) || defined(CONFIG_DVB_CS75XX_TS_MODULE)
+	struct dmxdev_filter 	*dmxdevfilter;
+        unsigned int    	id;
+#endif
 
 	if (dvb_demux_speedcheck) {
 		struct timespec cur_time, delta_time;
@@ -447,6 +459,10 @@ static void dvb_dmx_swfilter_packet(struct dvb_demux *demux, const u8 *buf)
 	};
 
 	list_for_each_entry(feed, &demux->feed_list, list_head) {
+#if defined(CONFIG_DVB_CS75XX_TS) || defined(CONFIG_DVB_CS75XX_TS_MODULE)
+		dmxdevfilter = (struct dmxdev_filter *)(feed->feed.ts.priv);
+		id = dmxdevfilter->dev->dvbdev->id;
+#endif
 		if ((feed->pid != pid) && (feed->pid != 0x2000))
 			continue;
 
@@ -455,10 +471,23 @@ static void dvb_dmx_swfilter_packet(struct dvb_demux *demux, const u8 *buf)
 		if ((DVR_FEED(feed)) && (dvr_done++))
 			continue;
 
+#if defined(CONFIG_DVB_CS75XX_TS) || defined(CONFIG_DVB_CS75XX_TS_MODULE)
+		if (demux->playing != id) {//Amos
+			continue;
+		}
+
+		feed->buffer_size = demux->feednum;
+
+		if (feed->pid == pid)
+			dvb_dmx_swfilter_packet_type(feed, buf);
+		else if (feed->pid == 0x2000)
+ 			feed->cb.ts(buf, feed->buffer_size, NULL, 0, &feed->feed.ts, DMX_OK);
+#else
 		if (feed->pid == pid)
 			dvb_dmx_swfilter_packet_type(feed, buf);
 		else if (feed->pid == 0x2000)
 			feed->cb.ts(buf, 188, NULL, 0, &feed->feed.ts, DMX_OK);
+#endif
 	}
 }
 
@@ -467,11 +496,21 @@ void dvb_dmx_swfilter_packets(struct dvb_demux *demux, const u8 *buf,
 {
 	spin_lock(&demux->lock);
 
+#if defined(CONFIG_DVB_CS75XX_TS) || defined(CONFIG_DVB_CS75XX_TS_MODULE)
+	if (buf[0] == 0x47) {
+		demux->feednum = count;
+/*              printk("%s=>demux=%x demux->feednum=%d rxq id=%d\n",
+			__func__,demux,demux->feednum,demux->playing);
+*/
+		dvb_dmx_swfilter_packet(demux, buf);
+	}
+#else
 	while (count--) {
 		if (buf[0] == 0x47)
 			dvb_dmx_swfilter_packet(demux, buf);
 		buf += 188;
 	}
+#endif
 
 	spin_unlock(&demux->lock);
 }

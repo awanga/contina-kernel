@@ -349,6 +349,9 @@ struct napi_struct {
 	struct list_head	dev_list;
 	struct sk_buff		*gro_list;
 	struct sk_buff		*skb;
+#ifdef CONFIG_SMB_TUNING
+	int			last_loop;
+#endif
 };
 
 enum {
@@ -1004,6 +1007,15 @@ struct net_device_ops {
 	void			(*ndo_neigh_destroy)(struct neighbour *n);
 };
 
+#ifdef CONFIG_BRIDGE_PKT_FWD_FILTER
+/* Support to check forwarding filter between LAN/WLAN and WAN.
+ * bits of vid_map[] mean VID of WAN port (eth0)
+ */
+struct packet_fwd_filter {
+	unsigned char vid_map[4096/8]; /* bitwise map: 1: forward, 0: drop */
+};
+#endif
+
 /*
  *	The DEVICE structure.
  *	Actually, this whole structure is a big mistake.  It mixes I/O
@@ -1302,6 +1314,24 @@ struct net_device {
 
 	/* group the device belongs to */
 	int group;
+
+#ifdef CONFIG_BRIDGE_PKT_FWD_FILTER
+	/* 
+	 * Forwarding filter to drop packets.
+	 * bitwise map for VID 0 ~ 4095
+	 */
+	struct packet_fwd_filter *pkt_fwd_filter;
+
+	/*
+	 * Forwarding group of this deivce.
+	 * Forwarding between the same group is not allowed.
+	 */
+	unsigned char fwd_grp;
+#define NETDEV_GRP_IGNORE	0 /* ignore the (from, to) relation */
+#define NETDEV_GRP_LAN		1 /* LAN group */
+#define NETDEV_GRP_WAN		2 /* WAN group */
+#define NETDEV_GRP_WLAN	4 /* WLAN group */
+#endif	
 };
 #define to_net_dev(d) container_of(d, struct net_device, dev)
 

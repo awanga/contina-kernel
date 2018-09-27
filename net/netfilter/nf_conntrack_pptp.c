@@ -32,6 +32,10 @@
 #include <linux/netfilter/nf_conntrack_proto_gre.h>
 #include <linux/netfilter/nf_conntrack_pptp.h>
 
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+#include <mach/cs_kernel_hook_api.h>
+#endif
+
 #define NF_CT_PPTP_VERSION "3.1"
 
 MODULE_LICENSE("GPL");
@@ -619,6 +623,10 @@ static int __init nf_conntrack_pptp_init(void)
 	rv = register_pernet_subsys(&nf_conntrack_pptp_net_ops);
 	if (rv < 0)
 		nf_conntrack_helper_unregister(&pptp);
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+	if (cs_kernel_hook_ops.kho_bypass_tcp_portlist_add != NULL)
+		cs_kernel_hook_ops.kho_bypass_tcp_portlist_add(0, PPTP_CONTROL_PORT, CS_BYPASS_CNT_VALID);
+#endif
 	return rv;
 }
 
@@ -626,6 +634,10 @@ static void __exit nf_conntrack_pptp_fini(void)
 {
 	nf_conntrack_helper_unregister(&pptp);
 	unregister_pernet_subsys(&nf_conntrack_pptp_net_ops);
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+	if (cs_kernel_hook_ops.kho_bypass_tcp_portlist_delete != NULL)
+		cs_kernel_hook_ops.kho_bypass_tcp_portlist_delete(0, PPTP_CONTROL_PORT, CS_BYPASS_CNT_VALID);
+#endif
 }
 
 module_init(nf_conntrack_pptp_init);

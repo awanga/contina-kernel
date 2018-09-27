@@ -301,12 +301,25 @@ static int dvb_dmxdev_set_buffer_size(struct dmxdev_filter *dmxdevfilter,
 	void *newmem;
 	void *oldmem;
 
+#if defined(CONFIG_DVB_CS75XX_TS) || defined(CONFIG_DVB_CS75XX_TS_MODULE)
+        unsigned int    id;
+
+        id = dmxdevfilter->dev->dvbdev->id;	/* get device ID */
+
+        buf->type = 1;	/* need to get packet type from driver layer. */
+
+        if (buf->size == size)
+                return 0;
+        if (!size)
+                return -EINVAL;
+#else
 	if (buf->size == size)
 		return 0;
 	if (!size)
 		return -EINVAL;
 	if (dmxdevfilter->state >= DMXDEV_STATE_GO)
 		return -EBUSY;
+#endif
 
 	newmem = vmalloc(size);
 	if (!newmem)
@@ -660,6 +673,10 @@ static int dvb_dmxdev_filter_start(struct dmxdev_filter *filter)
 			ret = dmxdev->demux->allocate_section_feed(dmxdev->demux,
 								   secfeed,
 								   dvb_dmxdev_section_callback);
+#if defined(CONFIG_DVB_CS75XX_TS) || defined(CONFIG_DVB_CS75XX_TS_MODULE)
+			/* vincent add	*/
+			(*secfeed)->priv = filter;
+#endif
 			if (ret < 0) {
 				printk("DVB (%s): could not alloc feed\n",
 				       __func__);

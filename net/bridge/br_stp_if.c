@@ -19,6 +19,10 @@
 #include "br_private.h"
 #include "br_private_stp.h"
 
+#ifdef CONFIG_CS752X
+extern int cs_core_vtable_virtual_mac_add(char * dev_name, const unsigned char *addr);
+#endif
+
 
 /* Port id is composed of priority and port number.
  * NB: some bits of priority are dropped to
@@ -209,6 +213,11 @@ void br_stp_change_bridge_id(struct net_bridge *br, const unsigned char *addr)
 
 	br_configuration_update(br);
 	br_port_state_selection(br);
+
+#ifdef CONFIG_CS752X
+	cs_core_vtable_virtual_mac_add(br->dev->name, addr);
+#endif
+
 	if (br_is_root_bridge(br) && !wasroot)
 		br_become_root_bridge(br);
 }

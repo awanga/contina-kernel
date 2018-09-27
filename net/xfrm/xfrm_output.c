@@ -107,7 +107,14 @@ out_exit:
 error:
 	spin_unlock_bh(&x->lock);
 error_nolock:
+#ifdef CONFIG_CS752X_HW_ACCELERATION_IPSEC
+	if (err != -EBUSY) {
+#endif
 	kfree_skb(skb);
+#ifdef CONFIG_CS752X_HW_ACCELERATION_IPSEC
+	}  else
+		err = NET_XMIT_DROP;
+#endif
 	goto out_exit;
 }
 

@@ -65,6 +65,51 @@ config MTD_NAND_AUTCPU12
 	  This enables the driver for the autronix autcpu12 board to
 	  access the SmartMediaCard.
 
+config MTD_CORTINA_CS752X_NAND
+	tristate "NAND Flash device on Cortina board"
+	depends on ARCH_GOLDENGATE && ARM && MTD_NAND && MACH_CORTINA_G2
+	help
+	  This enables the driver for the Cortina board to 
+	  access the nand device.
+
+
+choice
+	prompt "G2 Hardware ECC Mode"
+	depends on MTD_CORTINA_CS752X_NAND
+	default CS752X_NAND_ECC_HW_HAMMING_256
+	help
+	  This option enables the error correction provides hardware
+
+config CS752X_NAND_ECC_HW_HAMMING_256
+	bool "NAND Flash HW Hamming ECC (256) on Cortina board"
+	help
+	  This enables the driver for the Cortina board to 
+	  access the nand device with Hamming ecc.
+	  This option tolerates 1 bit error in 256 data
+
+config CS752X_NAND_ECC_HW_HAMMING_512
+	bool "NAND Flash HW Hamming ECC (512) on Cortina board"
+	help
+	  This enables the driver for the Cortina board to 
+	  access the nand device with Hamming ecc.
+	  This option tolerates 1 bit error in 512 data
+
+config CS752X_NAND_ECC_HW_BCH_8_512
+	bool "NAND Flash HW BCH ECC (8/512) on Cortina board"
+	help
+	  This enables the driver for the Cortina board to 
+	  access the nand device with BCH ecc. This option 
+	  tolerates 8 bit error in 512 data
+
+config CS752X_NAND_ECC_HW_BCH_12_512
+	bool "NAND Flash HW BCH ECC (12/512) on Cortina board"
+	help
+	  This enables the driver for the Cortina board to 
+	  access the nand device with BCH ecc. This option 
+	  tolerates 12 bit error in 512 data
+
+endchoice
+
 config MTD_NAND_DENALI
        depends on PCI
         tristate "Support Denali NAND controller on Intel Moorestown"

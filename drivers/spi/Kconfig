@@ -130,6 +130,12 @@ config SPI_COLDFIRE_QSPI
 	  This enables support for the Coldfire QSPI controller in master
 	  mode.
 
+config SPI_CS75XX
+	tristate "Cortina CS75XX SPI master"
+	depends on ARCH_GOLDENGATE
+	help
+	  This enables using the SPI master controller on the CS75XX chips.
+
 config SPI_DAVINCI
 	tristate "Texas Instruments DaVinci/DA8x/OMAP-L/AM1x SoC SPI controller"
 	depends on ARCH_DAVINCI
@@ -455,5 +461,12 @@ config SPI_TLE62X0
 endif # SPI_MASTER
 
 # (slave support would go here)
+comment "SPI Protocol Slave"
+
+config SPI_AGENT
+	tristate "SPI device agent"
+	depends on SPI_CS75XX
+	help
+	  This supports SPI slave drivers.
 
 endif # SPI

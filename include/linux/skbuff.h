@@ -390,6 +390,11 @@ struct sk_buff {
 	struct sk_buff		*next;
 	struct sk_buff		*prev;
 
+#ifdef CONFIG_ARCH_GOLDENGATE
+	/* brcm ofld path */
+	__u32			pktc_flags;
+	__u8			pktc_cb[8];	
+#endif
 	ktime_t			tstamp;
 
 	struct sock		*sk;
@@ -434,6 +439,13 @@ struct sk_buff {
 	__be16			protocol;
 
 	void			(*destructor)(struct sk_buff *skb);
+#ifdef CONFIG_CS75XX_NI_EXPERIMENTAL_SW_CACHE_MANAGEMENT
+	bool                    (*skb_recycle) (struct sk_buff *skb);
+#else /* CONFIG_CS75XX_NI_EXPERIMENTAL_SW_CACHE_MANAGEMENT */
+#ifdef CONFIG_SMB_TUNING
+	int                     (*skb_recycle) (struct sk_buff *skb);
+#endif
+#endif /* CONFIG_CS75XX_NI_EXPERIMENTAL_SW_CACHE_MANAGEMENT */
 #if defined(CONFIG_NF_CONNTRACK) || defined(CONFIG_NF_CONNTRACK_MODULE)
 	struct nf_conntrack	*nfct;
 #endif
@@ -467,6 +479,9 @@ struct sk_buff {
 	__u8			wifi_acked_valid:1;
 	__u8			wifi_acked:1;
 	__u8			no_fcs:1;
+#ifdef CONFIG_CS75XX_NI_EXPERIMENTAL_SW_CACHE_MANAGEMENT
+	__u8			dirty_buffer:1;
+#endif /* CONFIG_CS75XX_NI_EXPERIMENTAL_SW_CACHE_MANAGEMENT */
 	/* 9/11 bit hole (depending on ndisc_nodetype presence) */
 	kmemcheck_bitfield_end(flags2);
 
@@ -490,8 +505,22 @@ struct sk_buff {
 	sk_buff_data_t		end;
 	unsigned char		*head,
 				*data;
+#ifdef CONFIG_ARCH_GOLDENGATE
+#if 1 //CONFIG_SKB_UNCACHABLE_DATA
+	dma_addr_t		head_pa;
+#endif
+#ifdef CONFIG_CS75XX_NI_EXPERIMENTAL_SW_CACHE_MANAGEMENT
+	unsigned char		*map_end;
+#endif /* CONFIG_CS75XX_NI_EXPERIMENTAL_SW_CACHE_MANAGEMENT */
+	/*for HW ACCELERATION cs_cb poitner */
+	__u32 cs_cb_loc;
+#endif /* CONFIG_ARCH_GOLDENGATE */
 	unsigned int		truesize;
 	atomic_t		users;
+#ifdef CONFIG_ARCH_CS_LYNXE
+    void *priv;
+    __u32 cs_own;
+#endif /* CONFIG_ARCH_CS_LYNXE */
 };
 
 #ifdef __KERNEL__
@@ -560,12 +589,27 @@ extern void	       __kfree_skb(struct sk_buff *skb);
 extern struct sk_buff *__alloc_skb(unsigned int size,
 				   gfp_t priority, int fclone, int node);
 extern struct sk_buff *build_skb(void *data);
+#ifdef CONFIG_ARCH_GOLDENGATE
+#if 1 //CONFIG_SKB_UNCACHABLE_DATA
+extern struct sk_buff *__alloc_skb_uncachable(unsigned int size,
+				   gfp_t priority, int fclone, int node);
+#endif
+#endif /* CONFIG_ARCH_GOLDENGATE */
 static inline struct sk_buff *alloc_skb(unsigned int size,
 					gfp_t priority)
 {
 	return __alloc_skb(size, priority, 0, NUMA_NO_NODE);
 }
 
+#ifdef CONFIG_ARCH_GOLDENGATE
+#if 1 //CONFIG_SKB_UNCACHABLE_DATA
+static inline struct sk_buff *alloc_skb_uncachable(unsigned int size,
+					gfp_t priority)
+{
+	return __alloc_skb_uncachable(size, priority, 0, -1);
+}
+#endif
+#endif /* CONFIG_ARCH_GOLDENGATE */
 static inline struct sk_buff *alloc_skb_fclone(unsigned int size,
 					       gfp_t priority)
 {
@@ -1725,8 +1769,25 @@ static inline struct sk_buff *__dev_alloc_skb(unsigned int length,
 		skb_reserve(skb, NET_SKB_PAD);
 	return skb;
 }
+#ifdef CONFIG_ARCH_GOLDENGATE
+#if 1 //CONFIG_SKB_UNCACHABLE_DATA
+static inline struct sk_buff *__dev_alloc_skb_uncachable(unsigned int length,
+					      gfp_t gfp_mask)
+{
+	struct sk_buff *skb = alloc_skb_uncachable(length + NET_SKB_PAD, gfp_mask);
+	if (likely(skb))
+		skb_reserve(skb, NET_SKB_PAD);
+	return skb;
+}
+#endif
+#endif /* CONFIG_ARCH_GOLDENGATE */
 
 extern struct sk_buff *dev_alloc_skb(unsigned int length);
+#ifdef CONFIG_ARCH_GOLDENGATE
+#if 1 //CONFIG_SKB_UNCACHABLE_DATA
+extern struct sk_buff *dev_alloc_skb_uncachable(unsigned int length);
+#endif
+#endif /* CONFIG_ARCH_GOLDENGATE */
 
 extern struct sk_buff *__netdev_alloc_skb(struct net_device *dev,
 		unsigned int length, gfp_t gfp_mask);
@@ -2144,6 +2205,13 @@ extern unsigned int    datagram_poll(struct file *file, struct socket *sock,
 extern int	       skb_copy_datagram_iovec(const struct sk_buff *from,
 					       int offset, struct iovec *to,
 					       int size);
+#ifdef CONFIG_VFS_FASTPATH
+//Patch by G2NAS:enhance performance from socket to file
+extern int             skb_copy_datagram_to_kernel_iovec(const struct sk_buff *from,
+                                               int offset, struct iovec *to,
+                                               int size);
+#endif
+
 extern int	       skb_copy_and_csum_datagram_iovec(struct sk_buff *skb,
 							int hlen,
 							struct iovec *iov);
@@ -2590,6 +2658,14 @@ bool skb_partial_csum_set(struct sk_buff *skb, u16 start, u16 off);
 
 static inline bool skb_is_recycleable(const struct sk_buff *skb, int skb_size)
 {
+#ifdef CONFIG_ARCH_GOLDENGATE
+/* debug_Aaron 2013/05/14 implement non-cacheable for performace tuning */
+#if 0 //CONFIG_SKB_UNCACHABLE_DATA
+	if (skb->head_pa != 0)
+		return false;
+#endif
+#endif /* CONFIG_ARCH_GOLDENGATE */
+
 	if (irqs_disabled())
 		return false;
 

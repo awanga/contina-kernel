@@ -340,6 +340,16 @@ config I2C_CPM
 	  This driver can also be built as a module.  If so, the module
 	  will be called i2c-cpm.
 
+config I2C_CS75XX
+	tristate "Cortina CS75XX I2C(BIW) Controller"
+	depends on ARCH_GOLDENGATE
+	help
+	  If you say yes to this option, support will be included for the
+	  built-in I2C interface on the Cortina CS75XX of host bridges.
+
+	  This driver can also be built as a module.  If so, the module
+	  will be called i2c-cs75xx.
+
 config I2C_DAVINCI
 	tristate "DaVinci I2C driver"
 	depends on ARCH_DAVINCI

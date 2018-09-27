@@ -200,6 +200,10 @@ static int old_dev_ioctl(struct net_device *dev, struct ifreq *rq, int cmd)
 			return -EPERM;
 
 		br->ageing_time = clock_t_to_jiffies(args[1]);
+#ifdef CONFIG_CS752X_ACCEL_KERNEL
+		extern int cs_br_fdb_delete_hash(struct net_bridge *br);
+		cs_br_fdb_delete_hash(br);
+#endif		
 		return 0;
 
 	case BRCTL_GET_PORT_INFO:

@@ -26,6 +26,9 @@
 #include <asm/smp_twd.h>
 #include <asm/localtimer.h>
 #include <asm/hardware/gic.h>
+#ifdef CONFIG_CS75XX_WFO
+#include <mach/registers.h>
+#endif
 
 /* set up by the platform code */
 static void __iomem *twd_base;
@@ -184,6 +187,17 @@ static void __cpuinit twd_calibrate_rate(void)
 static irqreturn_t twd_handler(int irq, void *dev_id)
 {
 	struct clock_event_device *evt = *(struct clock_event_device **)dev_id;
+#ifdef CONFIG_CS75XX_WFO
+	unsigned int cpu = smp_processor_id();
+	GLOBAL_GLOBAL_CONFIG_t *p_glb_config = (GLOBAL_GLOBAL_CONFIG_t *)GLOBAL_GLOBAL_CONFIG;
+	unsigned int *p_jiffie_for_pe=(unsigned int *)RECIRC_TOP_RECIR_R_DMA_DMA_SPARE_0;
+
+	if(cpu == 0){
+		if(likely(p_glb_config->bf.recirc_pd == 0)){
+			*p_jiffie_for_pe = (*p_jiffie_for_pe + 1)&0xffff;
+		}
+	}
+#endif
 
 	if (twd_timer_ack()) {
 		evt->event_handler(evt);

@@ -410,7 +410,11 @@ static int dw_mci_idmac_init(struct dw_mci *host)
 	int i;
 
 	/* Number of descriptors in the ring buffer */
+#ifdef CONFIG_CS752X_SD
+	host->ring_size = 8;
+#else
 	host->ring_size = PAGE_SIZE / sizeof(struct idmac_desc);
+#endif /* CONFIG_CS752X_SD */
 
 	/* Forward link the descriptor list */
 	for (i = 0, p = host->sg_cpu; i < host->ring_size - 1; i++, p++)
@@ -626,6 +630,15 @@ static void dw_mci_setup_bus(struct dw_mci_slot *slot)
 		else
 			div = (host->bus_hz  / slot->clock) >> 1;
 
+#if defined(CONFIG_CS752X_SDIO) || defined(CONFIG_CS752X_SDIO_MODULE)
+/*
+ * We tested one SDIO card provided by customer.
+ * It worked on 25MHz.
+ * On G2 board, the clock on board is 50MHz by default.
+ * div=1 means 50/2 = 25MHz
+ */
+		div=1;  // 25MHz
+#endif
 		dev_info(&slot->mmc->class_dev,
 			 "Bus speed (slot %d) = %dHz (slot req %dHz, actual %dHZ"
 			 " div = %d)\n", slot->id, host->bus_hz, slot->clock,
@@ -741,6 +754,14 @@ static void dw_mci_request(struct mmc_host *mmc, struct mmc_request *mrq)
 
 	WARN_ON(slot->mrq);
 
+#if defined(CONFIG_CS752X_SDIO) || defined(CONFIG_CS752X_SDIO_MODULE)
+/*
+ * We tested one SDIO card provided by customer.
+ * It needs some delay.
+ * It may not need on other SDIO cards.
+ */
+	udelay(2000);
+#endif
 	/*
 	 * The check for card presence and queueing of the request must be
 	 * atomic, otherwise the card could be removed in between and the
@@ -1762,8 +1783,13 @@ static int __init dw_mci_init_slot(struct dw_mci *host, unsigned int id)
 	slot->host = host;
 
 	mmc->ops = &dw_mci_ops;
+#ifdef CONFIG_CS752X_SD
+	mmc->f_min = 400000;
+	mmc->f_max = 25000000;
+#else
 	mmc->f_min = DIV_ROUND_UP(host->bus_hz, 510);
 	mmc->f_max = host->bus_hz;
+#endif /* CONFIG_CS752X_SD */
 
 	if (host->pdata->get_ocr)
 		mmc->ocr_avail = host->pdata->get_ocr(id);
@@ -1804,11 +1830,20 @@ static int __init dw_mci_init_slot(struct dw_mci *host, unsigned int id)
 	} else {
 		/* Useful defaults if platform data is unset. */
 #ifdef CONFIG_MMC_DW_IDMAC
+#ifdef CONFIG_CS752X_SD
+		mmc->max_segs = host->ring_size;
+		mmc->max_blk_size = 512;
+		mmc->max_blk_count = host->ring_size;
+		mmc->max_seg_size = 0x1000;
+		mmc->max_req_size = mmc->max_seg_size * mmc->max_blk_count;
+#else
+
 		mmc->max_segs = host->ring_size;
 		mmc->max_blk_size = 65536;
 		mmc->max_blk_count = host->ring_size;
 		mmc->max_seg_size = 0x1000;
 		mmc->max_req_size = mmc->max_seg_size * mmc->max_blk_count;
+#endif
 #else
 		mmc->max_segs = 64;
 		mmc->max_blk_size = 65536; /* BLKSIZ is 16 bits */

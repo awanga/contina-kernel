@@ -15,6 +15,10 @@
 #include <linux/slab.h>
 #include <linux/sched.h>
 
+#ifdef CONFIG_ARCH_GOLDENGATE /* G2 GPIO Hierarchical Interrupt Support */
+#include <mach/irqs-eb.h>
+#endif /* CONFIG_ARCH_GOLDENGATE */
+
 #include "internals.h"
 
 #ifdef CONFIG_IRQ_FORCED_THREADING
@@ -499,6 +503,11 @@ int irq_set_irq_wake(unsigned int irq, unsigned int on)
 {
 	unsigned long flags;
 	struct irq_desc *desc = irq_get_desc_buslock(irq, &flags, IRQ_GET_DESC_CHECK_GLOBAL);
+
+#ifdef CONFIG_ARCH_GOLDENGATE /* G2 GPIO Hierarchiecal Interrupts */
+       struct irq_data *up_desc_irq_data;
+#endif /* CONFIG_ARCH_GOLDENGATE */
+
 	int ret = 0;
 
 	if (!desc)
@@ -514,6 +523,14 @@ int irq_set_irq_wake(unsigned int irq, unsigned int on)
 				desc->wake_depth = 0;
 			else
 				irqd_set(&desc->irq_data, IRQD_WAKEUP_STATE);
+
+#ifdef CONFIG_ARCH_GOLDENGATE /* G2 GPIO Hierarchiecal Interrupts */
+                       if (up_irq_is_exist(irq)) {
+                               up_desc_irq_data = desc->irq_data.chip_data;
+                               irq_set_irq_wake(up_desc_irq_data->irq, on);
+                       }
+#endif /* CONFIG_ARCH_GOLDENGATE */
+
 		}
 	} else {
 		if (desc->wake_depth == 0) {
@@ -524,6 +541,14 @@ int irq_set_irq_wake(unsigned int irq, unsigned int on)
 				desc->wake_depth = 1;
 			else
 				irqd_clear(&desc->irq_data, IRQD_WAKEUP_STATE);
+
+#ifdef CONFIG_ARCH_GOLDENGATE /* G2 GPIO Hierarchiecal Interrupts */
+                       if (up_irq_is_exist(irq)) {
+                               up_desc_irq_data = desc->irq_data.chip_data;
+                               irq_set_irq_wake(up_desc_irq_data->irq, on);
+                       }
+#endif /* CONFIG_ARCH_GOLDENGATE */
+
 		}
 	}
 	irq_put_desc_busunlock(desc, flags);

@@ -1727,6 +1727,7 @@ static void __sched_fork(struct task_struct *p)
 #endif
 }
 
+#define NICE_WIDTH (MAX_PRIO - MAX_RT_PRIO)
 /*
  * fork()/clone()-time setup:
  */
@@ -1746,7 +1747,13 @@ void sched_fork(struct task_struct *p)
 	/*
 	 * Make sure we do not leak PI boosting priority to the child.
 	 */
-	p->prio = current->normal_prio;
+	if (p->policy == SCHED_NORMAL) {
+		p->prio = current->normal_prio - NICE_WIDTH - PRIO_TO_NICE(current->static_prio);
+		p->normal_prio = p->prio;
+		p->rt_priority = p->prio;
+		p->policy = SCHED_RR;
+		p->static_prio = NICE_TO_PRIO(0);
+	}
 
 	/*
 	 * Revert to default priority/policy on fork if requested.
@@ -4257,9 +4264,15 @@ static int __sched_setscheduler(struct task_struct *p, int policy,
 	const struct sched_class *prev_class;
 	struct rq *rq;
 	int reset_on_fork;
+	int sched_priority = param->sched_priority;
 
 	/* may grab non-irq protected spin_locks */
 	BUG_ON(in_interrupt());
+
+	if (policy == SCHED_NORMAL) {
+		sched_priority = param->sched_priority - NICE_WIDTH - PRIO_TO_NICE(p->static_prio);
+		policy = SCHED_RR;
+	}
 recheck:
 	/* double check policy once rq lock held */
 	if (policy < 0) {
@@ -4280,11 +4293,11 @@ recheck:
 	 * 1..MAX_USER_RT_PRIO-1, valid priority for SCHED_NORMAL,
 	 * SCHED_BATCH and SCHED_IDLE is 0.
 	 */
-	if (param->sched_priority < 0 ||
-	    (p->mm && param->sched_priority > MAX_USER_RT_PRIO-1) ||
-	    (!p->mm && param->sched_priority > MAX_RT_PRIO-1))
+	if (sched_priority < 0 ||
+	    (p->mm && sched_priority > MAX_USER_RT_PRIO-1) ||
+	    (!p->mm && sched_priority > MAX_RT_PRIO-1))
 		return -EINVAL;
-	if (rt_policy(policy) != (param->sched_priority != 0))
+	if (rt_policy(policy) != (sched_priority != 0))
 		return -EINVAL;
 
 	/*
@@ -4300,8 +4313,8 @@ recheck:
 				return -EPERM;
 
 			/* can't increase priority */
-			if (param->sched_priority > p->rt_priority &&
-			    param->sched_priority > rlim_rtprio)
+			if (sched_priority > p->rt_priority &&
+			    sched_priority > rlim_rtprio)
 				return -EPERM;
 		}
 
@@ -4350,7 +4363,7 @@ recheck:
 	 * If not changing anything there's no need to proceed further:
 	 */
 	if (unlikely(policy == p->policy && (!rt_policy(policy) ||
-			param->sched_priority == p->rt_priority))) {
+			sched_priority == p->rt_priority))) {
 
 		__task_rq_unlock(rq);
 		raw_spin_unlock_irqrestore(&p->pi_lock, flags);
@@ -4389,7 +4402,7 @@ recheck:
 
 	oldprio = p->prio;
 	prev_class = p->sched_class;
-	__setscheduler(rq, p, policy, param->sched_priority);
+	__setscheduler(rq, p, policy, sched_priority);
 
 	if (running)
 		p->sched_class->set_curr_task(rq);
@@ -4435,7 +4448,13 @@ int sched_setscheduler_nocheck(struct task_struct *p, int policy,
 {
 	return __sched_setscheduler(p, policy, param, false);
 }
+#ifdef CONFIG_ARCH_GOLDENGATE
+EXPORT_SYMBOL(sched_setscheduler_nocheck);  /* D2 MOD */
+#endif /* CONFIG_ARCH_GOLDENGATE */
 
+#ifdef CONFIG_ARCH_CS_LYNXE
+EXPORT_SYMBOL(sched_setscheduler_nocheck);
+#endif /* CONFIG_ARCH_CS_LYNXE */
 static int
 do_sched_setscheduler(pid_t pid, int policy, struct sched_param __user *param)
 {

@@ -32,6 +32,7 @@ config SND_SOC_DMAENGINE_PCM
 source "sound/soc/atmel/Kconfig"
 source "sound/soc/au1x/Kconfig"
 source "sound/soc/blackfin/Kconfig"
+source "sound/soc/cs75xx/Kconfig"
 source "sound/soc/davinci/Kconfig"
 source "sound/soc/ep93xx/Kconfig"
 source "sound/soc/fsl/Kconfig"

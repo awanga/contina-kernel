@@ -1,0 +1,9 @@
+#menu "Custom Board ID Template Feature Menu"
+#	depends on CORTINA_CUSTOM_BOARD_ID_TEMPLATE
+#
+#config A_REALLY_COOL_FEATURE
+#       bool "A Synopsis of the Feature"
+#       help
+#         A more detailed summary of the feature.
+#
+#endmenu

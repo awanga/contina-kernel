@@ -18,6 +18,10 @@
 #include <net/netfilter/nf_nat_rule.h>
 #include <net/netfilter/nf_nat_protocol.h>
 
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+#include <mach/cs_kernel_hook_api.h>
+#endif
+
 static u_int16_t udp_port_rover;
 
 static void
@@ -60,7 +64,31 @@ udp_manip_pkt(struct sk_buff *skb,
 		newport = tuple->dst.u.udp.port;
 		portptr = &hdr->dest;
 	}
+
 	if (hdr->check || skb->ip_summed == CHECKSUM_PARTIAL) {
+
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+	{
+		int bypass_alg = 0;
+
+                if (cs_kernel_hook_ops.kho_bypass_udp_portlist_exist != NULL) {
+                        if (cs_kernel_hook_ops.kho_bypass_udp_portlist_exist(ntohs(hdr->source)))
+                                bypass_alg = 1;
+                        if (cs_kernel_hook_ops.kho_bypass_udp_portlist_exist(ntohs(tuple->src.u.udp.port)))
+                                bypass_alg = 1;
+                        if (cs_kernel_hook_ops.kho_bypass_udp_portlist_exist(ntohs(hdr->dest)))
+                                bypass_alg = 1;
+                        if (cs_kernel_hook_ops.kho_bypass_udp_portlist_exist(ntohs(tuple->dst.u.udp.port)))
+                                bypass_alg = 1;
+                }
+		if ((bypass_alg == 0) && (skb->dev->name != NULL)) {
+			if (cs_kernel_hook_ops.kho_nat_entry_add != NULL)
+                        	cs_kernel_hook_ops.kho_nat_entry_add(0, 0, (maniptype == NF_NAT_MANIP_SRC) ? 1 : 0,  iph->saddr, tuple->src.u3.ip, iph->daddr, tuple->dst.u3.ip,
+                                                                hdr->source, tuple->src.u.udp.port, hdr->dest, tuple->dst.u.udp.port);
+		}
+	}
+#endif
+
 		inet_proto_csum_replace4(&hdr->check, skb, oldip, newip, 1);
 		inet_proto_csum_replace2(&hdr->check, skb, *portptr, newport,
 					 0);

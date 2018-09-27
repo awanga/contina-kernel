@@ -46,6 +46,9 @@ struct tcf_police {
 	psched_time_t		tcfp_t_c;
 	struct qdisc_rate_table	*tcfp_R_tab;
 	struct qdisc_rate_table	*tcfp_P_tab;
+#ifdef CONFIG_CS752X_HW_ACCELERATION
+	u8			hw_pol_id;
+#endif
 };
 #define to_police(pc)	\
 	container_of(pc, struct tcf_police, common)

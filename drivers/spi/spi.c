@@ -1250,7 +1250,6 @@ static int __spi_sync(struct spi_device *spi, struct spi_message *message,
 		mutex_unlock(&master->bus_lock_mutex);
 
 	if (status == 0) {
-		wait_for_completion(&done);
 		status = message->status;
 	}
 	message->context = NULL;

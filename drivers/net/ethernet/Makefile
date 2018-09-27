@@ -2,6 +2,8 @@
 # Makefile for the Linux network Ethernet device drivers.
 #
 
+obj-$(CONFIG_CS752X) += cs752x/
+obj-$(CONFIG_CS752X_PROC) += cs752x/
 obj-$(CONFIG_NET_VENDOR_3COM) += 3com/
 obj-$(CONFIG_NET_VENDOR_8390) += 8390/
 obj-$(CONFIG_NET_VENDOR_ADAPTEC) += adaptec/

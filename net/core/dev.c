@@ -138,6 +138,12 @@
 
 #include "net-sysfs.h"
 
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+#include <mach/cs_kernel_hook_api.h>
+struct kernel_hook_ops cs_kernel_hook_ops={0};
+EXPORT_SYMBOL(cs_kernel_hook_ops);
+#endif
+
 /* Instead of increasing this, you should create a hash table. */
 #define MAX_GRO_SKBS 8
 
@@ -2234,6 +2240,12 @@ int dev_hard_start_xmit(struct sk_buff *skb, struct net_device *dev,
 		}
 
 		skb_len = skb->len;
+
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+		if (cs_kernel_hook_ops.kho_8021q_pcp_handler != NULL)
+			cs_kernel_hook_ops.kho_8021q_pcp_handler(skb);
+#endif
+
 		rc = ops->ndo_start_xmit(skb, dev);
 		trace_net_dev_xmit(skb, rc, dev, skb_len);
 		if (rc == NETDEV_TX_OK)
@@ -2366,8 +2378,13 @@ static inline int get_xps_queue(struct net_device *dev, struct sk_buff *skb)
 #endif
 }
 
+#ifndef CONFIG_ARCH_GOLDENGATE
 static struct netdev_queue *dev_pick_tx(struct net_device *dev,
 					struct sk_buff *skb)
+#else /* CONFIG_ARCH_GOLDENGATE */
+struct netdev_queue *dev_pick_tx(struct net_device *dev, 
+					struct sk_buff *skb)
+#endif /* CONFIG_ARCH_GOLDENGATE */
 {
 	int queue_index;
 	const struct net_device_ops *ops = dev->netdev_ops;
@@ -2402,6 +2419,9 @@ static struct netdev_queue *dev_pick_tx(struct net_device *dev,
 	skb_set_queue_mapping(skb, queue_index);
 	return netdev_get_tx_queue(dev, queue_index);
 }
+#ifdef CONFIG_ARCH_GOLDENGATE
+EXPORT_SYMBOL(dev_pick_tx);
+#endif /* CONFIG_ARCH_GOLDENGATE */
 
 static inline int __dev_xmit_skb(struct sk_buff *skb, struct Qdisc *q,
 				 struct net_device *dev,
@@ -2961,6 +2981,65 @@ int netif_rx(struct sk_buff *skb)
 }
 EXPORT_SYMBOL(netif_rx);
 
+#ifdef CONFIG_CS752X
+/**
+ * netif_rx_cs  -	post buffer to the network code dedicated for cs752x
+ * 			network processor
+ * @skb: buffer to post
+ *
+ * This function receives a packet from device driver and queue it for the
+ * upper (protocol) levels to process.
+ *
+ * return values:
+ * NET_RX_SUCCESS	(no congestion)
+ * NET_RX_DROP		(packet was dropped)
+ */
+int netif_rx_cs(struct sk_buff *skb)
+{
+	int ret;
+
+	/* if netpoll wants it, pretend we never saw it */
+	if (netpoll_rx(skb))
+		return NET_RX_DROP;
+
+	net_timestamp_check(netdev_tstamp_prequeue, skb);
+
+#ifdef CONFIG_RPS
+	{
+		struct rps_dev_flow voidflow, *rflow = &voidflow;
+		int cpu, curr_cpu;
+
+		preempt_disable();
+		rcu_read_lock();
+
+		cpu = get_rps_cpu(skb->dev, skb, &rflow);
+
+		if (cpu < 0) {
+			curr_cpu = smp_processor_id();
+			cpu = curr_cpu ^ 0x1;
+			if (cpu == RPS_NO_CPU || !cpu_online(cpu))
+				cpu = curr_cpu;
+			else
+				rflow->last_qtail = per_cpu(softnet_data,
+						cpu).input_queue_head;
+		}
+
+		ret = enqueue_to_backlog(skb, cpu, &rflow->last_qtail);
+
+		rcu_read_unlock();
+		preempt_enable();
+	}
+#else
+	{
+		unsigned int qtail;
+		ret = enqueue_to_backlog(skb, get_cpu(), &qtail);
+		put_cpu();
+	}
+#endif
+	return ret;
+}
+EXPORT_SYMBOL(netif_rx_cs);
+#endif
 int netif_rx_ni(struct sk_buff *skb)
 {
 	int err;
@@ -3875,6 +3954,12 @@ static void net_rx_action(struct softirq_action *h)
 		 */
 		work = 0;
 		if (test_bit(NAPI_STATE_SCHED, &n->state)) {
+#ifdef CONFIG_SMB_TUNING
+			if (h->max_restart <= 1 && budget <= weight)
+				n->last_loop = 1;
+			else
+				n->last_loop = 0;
+#endif
 			work = n->poll(n, weight);
 			trace_napi_poll(n);
 		}
@@ -4766,6 +4851,14 @@ int dev_set_mtu(struct net_device *dev, int new_mtu)
 
 	if (!err && dev->flags & IFF_UP)
 		call_netdevice_notifiers(NETDEV_CHANGEMTU, dev);
+
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+        if (!err) {
+                if (cs_kernel_hook_ops.kho_l3_intf_update_mtu != NULL)
+                        cs_kernel_hook_ops.kho_l3_intf_update_mtu(0, dev->ifindex, new_mtu);
+        }
+#endif
+
 	return err;
 }
 EXPORT_SYMBOL(dev_set_mtu);
@@ -4792,6 +4885,9 @@ int dev_set_mac_address(struct net_device *dev, struct sockaddr *sa)
 {
 	const struct net_device_ops *ops = dev->netdev_ops;
 	int err;
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+	int i;
+#endif
 
 	if (!ops->ndo_set_mac_address)
 		return -EOPNOTSUPP;
@@ -4803,6 +4899,22 @@ int dev_set_mac_address(struct net_device *dev, struct sockaddr *sa)
 	if (!err)
 		call_netdevice_notifiers(NETDEV_CHANGEADDR, dev);
 	add_device_randomness(dev->dev_addr, dev->addr_len);
+
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+        printk("%s: dev->ifindex=%d, dev->addr_len=%d\n", __func__, dev->ifindex, dev->addr_len);
+        printk("%s: sa->sa_data[]=", __func__);
+        for (i=0; i < 14; i++)
+        {
+                printk("[0x%x]-", sa->sa_data[i]);
+        }
+        printk("\n");
+
+        if (!err) {
+                if (cs_kernel_hook_ops.kho_l3_intf_update_mac_addr != NULL)
+                        cs_kernel_hook_ops.kho_l3_intf_update_mac_addr(0, dev->ifindex, dev->dev_addr, dev->addr_len);
+        }
+#endif
+
 	return err;
 }
 EXPORT_SYMBOL(dev_set_mac_address);

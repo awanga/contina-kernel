@@ -81,6 +81,10 @@
 #include <net/ip_fib.h>
 #include "fib_lookup.h"
 
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+#include <mach/cs_kernel_hook_api.h>
+#endif
+
 #define MAX_STAT_DEPTH 32
 
 #define KEYLENGTH (8*sizeof(t_key))
@@ -1338,6 +1342,14 @@ int fib_table_insert(struct fib_table *tb, struct fib_config *cfg)
 	rtmsg_fib(RTM_NEWROUTE, htonl(key), new_fa, plen, tb->tb_id,
 		  &cfg->fc_nlinfo, 0);
 succeeded:
+
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+        if (cfg->fc_type == RTN_UNICAST) {
+                if (cs_kernel_hook_ops.kho_l3_route_add_ipv4_static != NULL)
+                        cs_kernel_hook_ops.kho_l3_route_add_ipv4_static(0, cfg);
+        }
+#endif
+
 	return 0;
 
 out_free_new_fa:
@@ -1713,6 +1725,14 @@ int fib_table_delete(struct fib_table *tb, struct fib_config *cfg)
 
 	fib_release_info(fa->fa_info);
 	alias_free_mem_rcu(fa);
+
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+        if (cfg->fc_type == RTN_UNICAST) {
+                if (cs_kernel_hook_ops.kho_l3_route_del_ipv4_static != NULL)
+                        cs_kernel_hook_ops.kho_l3_route_del_ipv4_static(0, cfg);
+        }
+#endif
+
 	return 0;
 }
 

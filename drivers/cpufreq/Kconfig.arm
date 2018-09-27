@@ -76,3 +76,12 @@ config ARM_EXYNOS5250_CPUFREQ
 	help
 	  This adds the CPUFreq driver for Samsung EXYNOS5250
 	  SoC.
+
+config ARM_GOLDENGATE_CPUFREQ
+	bool "CS75XX CPU Frequency scaling support"
+	depends on ARCH_GOLDENGATE
+	default ARCH_GOLDENGATE
+	help
+	  This adds the CPUFreq driver for the Cortina CS75XX SoC.
+
+	  If in doubt, say N.

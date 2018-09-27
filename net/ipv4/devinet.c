@@ -63,6 +63,11 @@
 #include <net/rtnetlink.h>
 #include <net/net_namespace.h>
 
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+#include <linux/if_vlan.h>
+#include <mach/cs_kernel_hook_api.h>
+#endif
+
 #include "fib_lookup.h"
 
 static struct ipv4_devconf ipv4_devconf = {
@@ -642,10 +647,39 @@ errout:
 	return ERR_PTR(err);
 }
 
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+static int rtm_to_dev(struct net *net, struct nlmsghdr *nlh, struct net_device **dev)
+{
+        int err;
+        struct nlattr *tb[IFA_MAX+1];
+	struct ifaddrmsg *ifm;
+
+        err = nlmsg_parse(nlh, sizeof(*ifm), tb, IFA_MAX, ifa_ipv4_policy);
+        if (err < 0)
+               	return err; 
+
+        ifm = nlmsg_data(nlh);
+        err = -EINVAL;
+        if (ifm->ifa_prefixlen > 32 || tb[IFA_LOCAL] == NULL)
+                return err;
+
+        *dev = __dev_get_by_index(net, ifm->ifa_index);
+        err = -ENODEV;
+        if (*dev == NULL)
+                return err;
+	return 0;
+}
+#endif
+
 static int inet_rtm_newaddr(struct sk_buff *skb, struct nlmsghdr *nlh, void *arg)
 {
 	struct net *net = sock_net(skb->sk);
 	struct in_ifaddr *ifa;
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+	int ret;
+    __cs_ip_address_t ip_addr;
+	struct net_device *dev;
+#endif
 
 	ASSERT_RTNL();
 
@@ -653,7 +687,27 @@ static int inet_rtm_newaddr(struct sk_buff *skb, struct nlmsghdr *nlh, void *arg
 	if (IS_ERR(ifa))
 		return PTR_ERR(ifa);
 
+#ifndef CONFIG_LYNXE_KERNEL_HOOK
 	return __inet_insert_ifa(ifa, nlh, NETLINK_CB(skb).pid);
+#else /* CONFIG_LYNXE_KERNEL_HOOK */
+	ret = __inet_insert_ifa(ifa, nlh, NETLINK_CB(skb).pid);
+	rtm_to_dev(net, nlh, &dev);
+	memset(&ip_addr, 0, sizeof(__cs_ip_address_t));
+	ip_addr.afi = __CS_IPV4;
+	ip_addr.ip_addr.ipv4_addr = ifa->ifa_address;
+	ip_addr.addr_len = ifa->ifa_prefixlen;
+	if (is_vlan_dev(dev)) {
+		printk("%s: dev->name=%s is a VLAN device!!\n", __func__, dev->name);
+		printk("%s: vlan_dev_vlan_id(dev)=%d, dev->if_port=%d, dev->addr_len=%d\n", __func__, vlan_dev_vlan_id(dev), dev->if_port, dev->addr_len);
+		printk("%s: dev->dev_addr[0-6]=0x%x-0x%x-0x%x-0x%x-0x%x-0x%x\n", __func__,
+			dev->dev_addr[0], dev->dev_addr[1], dev->dev_addr[2], dev->dev_addr[3], dev->dev_addr[4], dev->dev_addr[5]);
+	}
+
+	if (cs_kernel_hook_ops.kho_l3_intf_add != NULL)
+		cs_kernel_hook_ops.kho_l3_intf_add(0, dev, &ip_addr, 0, 0);
+
+	return ret;
+#endif /* CONFIG_LYNXE_KERNEL_HOOK */
 }
 
 /*
@@ -693,6 +747,10 @@ int devinet_ioctl(struct net *net, unsigned int cmd, void __user *arg)
 	char *colon;
 	int ret = -EFAULT;
 	int tryaddrmatch = 0;
+
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+	__cs_ip_address_t ip_addr;
+#endif
 
 	/*
 	 *	Fetch the caller's info block into kernel space
@@ -856,6 +914,21 @@ int devinet_ioctl(struct net *net, unsigned int cmd, void __user *arg)
 			ifa->ifa_mask = inet_make_mask(32);
 		}
 		ret = inet_set_ifa(dev, ifa);
+
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+                ip_addr.afi = __CS_IPV4;
+                ip_addr.ip_addr.ipv4_addr = ifa->ifa_address;
+                ip_addr.addr_len = ifa->ifa_prefixlen;
+                if (is_vlan_dev(dev)) {
+                        printk("%s: dev->name=%s is a VLAN device!!\n", __func__, dev->name);
+                        printk("%s: vlan_dev_vlan_id(dev)=%d, dev->if_port=%d, dev->addr_len=%d\n", __func__, vlan_dev_vlan_id(dev), dev->if_port, dev->addr_len);
+                        printk("%s: dev->dev_addr[0-6]=0x%x-0x%x-0x%x-0x%x-0x%x-0x%x\n", __func__,
+                                dev->dev_addr[0], dev->dev_addr[1], dev->dev_addr[2], dev->dev_addr[3], dev->dev_addr[4], dev->dev_addr[5]);
+                }
+
+                if (cs_kernel_hook_ops.kho_l3_intf_add != NULL)  
+                        cs_kernel_hook_ops.kho_l3_intf_add(0, dev, &ip_addr, 0, 0);
+#endif
 		break;
 
 	case SIOCSIFBRDADDR:	/* Set the broadcast address */
@@ -878,6 +951,12 @@ int devinet_ioctl(struct net *net, unsigned int cmd, void __user *arg)
 		inet_del_ifa(in_dev, ifap, 0);
 		ifa->ifa_address = sin->sin_addr.s_addr;
 		inet_insert_ifa(ifa);
+
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+                if (cs_kernel_hook_ops.kho_pppoe_update != NULL)
+                        cs_kernel_hook_ops.kho_pppoe_update(0, dev);
+#endif
+
 		break;
 
 	case SIOCSIFNETMASK: 	/* Set the netmask for the interface */
@@ -1152,6 +1231,9 @@ static int inetdev_event(struct notifier_block *this, unsigned long event,
 {
 	struct net_device *dev = ptr;
 	struct in_device *in_dev = __in_dev_get_rtnl(dev);
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+        __cs_ip_address_t ip_addr;
+#endif
 
 	ASSERT_RTNL();
 
@@ -1196,6 +1278,27 @@ static int inetdev_event(struct notifier_block *this, unsigned long event,
 				inet_insert_ifa(ifa);
 			}
 		}
+
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+		else {
+				struct in_ifaddr **ifap = NULL;
+ 				struct in_ifaddr *ifa = NULL;
+
+				memset(&ip_addr, 0, sizeof(__cs_ip_address_t));
+			 	ip_addr.afi = __CS_IPV4;
+
+				for (ifap = &in_dev->ifa_list; (ifa = *ifap) != NULL; ifap = &ifa->ifa_next) {
+					if (ifa != NULL) {
+						printk("%s: ifa->ifa_label=%s, ifa->ifa_local=0x%x\n", __func__, ifa->ifa_label, ifa->ifa_local);
+						ip_addr.ip_addr.ipv4_addr = ifa->ifa_local;
+			 			ip_addr.addr_len = ifa->ifa_prefixlen;;
+					}
+                        	}
+                                if (cs_kernel_hook_ops.kho_l3_intf_add != NULL)  
+                                        cs_kernel_hook_ops.kho_l3_intf_add(0, dev, &ip_addr, 0, 0);
+		}
+#endif
+
 		ip_mc_up(in_dev);
 		/* fall through */
 	case NETDEV_CHANGEADDR:

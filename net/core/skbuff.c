@@ -72,8 +72,42 @@
 
 #include "kmap_skb.h"
 
+#ifdef CONFIG_CS752X_ACCEL_KERNEL
+#include "../../drivers/net/ethernet/cs752x/src/include/cs_core_logic.h"
+#endif
+
 static struct kmem_cache *skbuff_head_cache __read_mostly;
 static struct kmem_cache *skbuff_fclone_cache __read_mostly;
+
+#ifdef CONFIG_ARCH_GOLDENGATE
+#if 1 //CONFIG_SKB_UNCACHABLE_DATA
+#include <linux/dmapool.h>
+#include <linux/device.h>
+#include <linux/kobject.h>
+
+#define SKB_MEM_BLOCK_SIZE	(3840+NET_SKB_PAD+sizeof(struct skb_shared_info)) //(PAGE_SIZE * 2)	//RX_BUFFER_AGGRESIZE=3840
+static struct dma_pool *skb_mem_pool = NULL;
+
+static u64 skb_uncachable_dmamask = 0xffffffffUL;
+/* Pseudo device for dma pool status*/
+static struct device skb_uncachable_mem_device = {
+	.dma_mask = &skb_uncachable_dmamask,
+	.coherent_dma_mask = 0xffffffff,
+};
+
+/* debug_Aaron 2012/12/11 implement non-cacheable for performace tuning */
+static int skb_mem_pool_init(void)
+{
+	device_initialize(&skb_uncachable_mem_device);
+	dev_set_name(&skb_uncachable_mem_device, "skb_mem_pool");
+	device_add(&skb_uncachable_mem_device);
+	skb_mem_pool = dma_pool_create("skb_mem_pool", &skb_uncachable_mem_device, SKB_MEM_BLOCK_SIZE, 32, 0);
+	if (!skb_mem_pool)
+		printk(KERN_WARNING "Create skb_mem_pool failed.\n");
+	return 0;
+}
+#endif
+#endif /* CONFIG_ARCH_GOLDENGATE */
 
 static void sock_pipe_buf_release(struct pipe_inode_info *pipe,
 				  struct pipe_buffer *buf)
@@ -190,7 +224,13 @@ struct sk_buff *__alloc_skb(unsigned int size, gfp_t gfp_mask,
 	 * aligned memory blocks, unless SLUB/SLAB debug is enabled.
 	 * Both skb->head and skb_shared_info are cache line aligned.
 	 */
+#ifdef CONFIG_CS752X_VIRTUAL_NETWORK_INTERFACE
+#define SKB_EXT_SIZE	16
+	/* reserve extra space to insert tag */
+	size = SKB_DATA_ALIGN(size + SKB_EXT_SIZE);
+#else
 	size = SKB_DATA_ALIGN(size);
+#endif
 	size += SKB_DATA_ALIGN(sizeof(struct skb_shared_info));
 	data = kmalloc_node_track_caller(size, gfp_mask, node);
 	if (!data)
@@ -212,7 +252,29 @@ struct sk_buff *__alloc_skb(unsigned int size, gfp_t gfp_mask,
 	skb->truesize = SKB_TRUESIZE(size);
 	atomic_set(&skb->users, 1);
 	skb->head = data;
+#ifdef CONFIG_ARCH_GOLDENGATE
+#if 1 //CONFIG_SKB_UNCACHABLE_DATA
+	skb->head_pa = 0;
+#endif
+#endif /* CONFIG_ARCH_GOLDENGATE */
+#ifdef CONFIG_CS75XX_NI_EXPERIMENTAL_SW_CACHE_MANAGEMENT
+	/* ...by default, buffer allocated is "dirty" (memory needs to be flushed) */
+	skb->dirty_buffer = 1;
+	skb->map_end = NULL;
+#endif /* CONFIG_CS75XX_NI_EXPERIMENTAL_SW_CACHE_MANAGEMENT */
+#ifdef CONFIG_CS752X_ACCEL_KERNEL
+	skb->cs_cb_loc = 0;
+#endif
+
+#ifdef CONFIG_CS752X_VIRTUAL_NETWORK_INTERFACE
+	skb->data = data + SKB_EXT_SIZE;
+#else
 	skb->data = data;
+#endif
+#ifdef CONFIG_ARCH_CS_LYNXE
+    skb->cs_own = 0;
+    skb->priv = NULL;
+#endif /* CONFIG_ARCH_CS_LYNXE */
 	skb_reset_tail_pointer(skb);
 	skb->end = skb->tail + size;
 #ifdef NET_SKBUFF_DATA_USES_OFFSET
@@ -233,8 +295,21 @@ struct sk_buff *__alloc_skb(unsigned int size, gfp_t gfp_mask,
 		kmemcheck_annotate_bitfield(child, flags2);
 		skb->fclone = SKB_FCLONE_ORIG;
 		atomic_set(fclone_ref, 1);
+#ifdef CONFIG_ARCH_GOLDENGATE
+#if 1 //CONFIG_SKB_UNCACHABLE_DATA
+		child->head_pa = 0;
+#endif
+#endif /* CONFIG_ARCH_GOLDENGATE */
+
+#ifdef CONFIG_CS752X_ACCEL_KERNEL
+		child->cs_cb_loc = 0;
+#endif
 
 		child->fclone = SKB_FCLONE_UNAVAILABLE;
+#ifdef CONFIG_ARCH_CS_LYNXE
+        child->cs_own = 0;
+        child->priv = NULL;
+#endif /* CONFIG_ARCH_CS_LYNXE */
 	}
 out:
 	return skb;
@@ -244,6 +319,104 @@ nodata:
 	goto out;
 }
 EXPORT_SYMBOL(__alloc_skb);
+
+#ifdef CONFIG_ARCH_GOLDENGATE
+#if 1 //CONFIG_SKB_UNCACHABLE_DATA
+struct sk_buff *__alloc_skb_uncachable(unsigned int size, gfp_t gfp_mask,
+			    int fclone, int node)
+{
+	struct kmem_cache *cache;
+	struct skb_shared_info *shinfo;
+	struct sk_buff *skb = NULL;
+	u8 *data;
+	dma_addr_t dma_pa;
+
+	/* debug_Aaron 2012/12/11 implement non-cacheable for performace tuning */
+	if (!skb_mem_pool)
+        {
+                skb_mem_pool_init();
+
+                if (skb_mem_pool == NULL)
+                {
+                        printk("%s: skb_mem_pool is NULL !!!\n", __func__);
+                        goto out;
+                }
+        }
+
+	cache = fclone ? skbuff_fclone_cache : skbuff_head_cache;
+
+	/* Get the HEAD */
+	skb = kmem_cache_alloc_node(cache, gfp_mask & ~__GFP_DMA, node);
+	if (!skb)
+		goto out;
+	prefetchw(skb);
+
+	size = SKB_DATA_ALIGN(size);
+	if (size + sizeof(struct skb_shared_info) > SKB_MEM_BLOCK_SIZE) {
+		printk(KERN_ERR "skb_mem_pool block size too small!(req=%d,bs=%d)\n",
+			       size + sizeof(struct skb_shared_info), SKB_MEM_BLOCK_SIZE);
+		goto nodata;
+	}
+	data = dma_pool_alloc(skb_mem_pool, gfp_mask, &dma_pa);
+#if 0
+	data = dma_alloc_coherent(NULL, PAGE_ALIGN(size + sizeof(struct skb_shared_info)),
+			&dma_pa, gfp_mask);
+#endif
+	if (!data)
+		goto nodata;
+	//Because we use uncachable data region, we ignore prefetch share information.
+	//prefetchw(data + size);
+
+	/*
+	 * Only clear those fields we need to clear, not those that we will
+	 * actually initialise below. Hence, don't put any more fields after
+	 * the tail pointer in struct sk_buff!
+	 */
+	memset(skb, 0, offsetof(struct sk_buff, tail));
+	skb->truesize = size + sizeof(struct sk_buff);
+	atomic_set(&skb->users, 1);
+	skb->head = data;
+	skb->head_pa = dma_pa;
+	skb->data = data;
+	skb_reset_tail_pointer(skb);
+	skb->end = skb->tail + size;
+	kmemcheck_annotate_bitfield(skb, flags1);
+	kmemcheck_annotate_bitfield(skb, flags2);
+#ifdef NET_SKBUFF_DATA_USES_OFFSET
+	skb->mac_header = ~0U;
+#endif
+#ifdef CONFIG_CS752X_ACCEL_KERNEL
+	skb->cs_cb_loc = 0;
+#endif
+
+	/* make sure we initialize shinfo sequentially */
+	shinfo = skb_shinfo(skb);
+	memset(shinfo, 0, offsetof(struct skb_shared_info, dataref));
+	atomic_set(&shinfo->dataref, 1);
+
+	if (fclone) {
+		struct sk_buff *child = skb + 1;
+		atomic_t *fclone_ref = (atomic_t *) (child + 1);
+
+		kmemcheck_annotate_bitfield(child, flags1);
+		kmemcheck_annotate_bitfield(child, flags2);
+		skb->fclone = SKB_FCLONE_ORIG;
+		atomic_set(fclone_ref, 1);
+#ifdef CONFIG_CS752X_ACCEL_KERNEL
+		child->cs_cb_loc = 0;
+#endif
+		child->fclone = SKB_FCLONE_UNAVAILABLE;
+	}
+out:
+	return skb;
+nodata:
+	kmem_cache_free(cache, skb);
+	skb = NULL;
+	goto out;
+}
+EXPORT_SYMBOL(__alloc_skb_uncachable);
+#endif
+#endif /* CONFIG_ARCH_GOLDENGATE */
 
 /**
  * build_skb - build a network buffer
@@ -353,6 +526,20 @@ struct sk_buff *dev_alloc_skb(unsigned int length)
 }
 EXPORT_SYMBOL(dev_alloc_skb);
 
+#ifdef CONFIG_ARCH_GOLDENGATE
+#if 1 //CONFIG_SKB_UNCACHABLE_DATA
+struct sk_buff *dev_alloc_skb_uncachable(unsigned int length)
+{
+	/*
+	 * There is more code here than it seems:
+	 * __dev_alloc_skb is an inline
+	 */
+	return __dev_alloc_skb_uncachable(length, GFP_ATOMIC);
+}
+EXPORT_SYMBOL(dev_alloc_skb_uncachable);
+#endif
+#endif /* CONFIG_ARCH_GOLDENGATE */
+
 static void skb_drop_list(struct sk_buff **listp)
 {
 	struct sk_buff *list = *listp;
@@ -405,8 +592,21 @@ static void skb_release_data(struct sk_buff *skb)
 		if (skb_has_frag_list(skb))
 			skb_drop_fraglist(skb);
 
+#ifdef CONFIG_ARCH_GOLDENGATE
+#if 1 //CONFIG_SKB_UNCACHABLE_DATA
+		if(skb->head_pa){
+			//size_t size = skb->truesize - sizeof(struct sk_buff);
+			//dma_free_coherent(NULL, PAGE_ALIGN(size + sizeof(struct skb_shared_info)), skb->head, skb->head_pa);
+			dma_pool_free(skb_mem_pool, skb->head, skb->head_pa);
+		}
+		else
+#endif
+#endif /* CONFIG_ARCH_GOLDENGATE */
 		kfree(skb->head);
 	}
+#ifdef CONFIG_ARCH_GOLDENGATE
+	skb->head_pa = 0;
+#endif /* CONFIG_ARCH_GOLDENGATE */
 }
 
 /*
@@ -489,6 +689,27 @@ static void skb_release_all(struct sk_buff *skb)
 
 void __kfree_skb(struct sk_buff *skb)
 {
+#ifdef CONFIG_CS75XX_NI_EXPERIMENTAL_SW_CACHE_MANAGEMENT
+	if (skb->skb_recycle && skb->skb_recycle(skb))
+		return;
+#else /* CONFIG_CS75XX_NI_EXPERIMENTAL_SW_CACHE_MANAGEMENT */
+#ifdef CONFIG_SMB_TUNING
+	if (skb->skb_recycle && !skb->skb_recycle(skb))
+		return;
+#endif
+#endif /* CONFIG_CS75XX_NI_EXPERIMENTAL_SW_CACHE_MANAGEMENT */
+
+#ifdef CONFIG_CS752X_ACCEL_KERNEL
+	cs_accel_cb_del(skb);
+#endif
+#ifdef CONFIG_ARCH_CS_LYNXE
+    if(skb->priv)
+    {
+        kfree(skb->priv);
+        skb->priv = NULL;
+    }
+    skb->cs_own = 0;
+#endif /* CONFIG_ARCH_CS_LYNXE */
 	skb_release_all(skb);
 	kfree_skbmem(skb);
 }
@@ -556,6 +777,10 @@ void skb_recycle(struct sk_buff *skb)
 	memset(skb, 0, offsetof(struct sk_buff, tail));
 	skb->data = skb->head + NET_SKB_PAD;
 	skb_reset_tail_pointer(skb);
+
+#ifdef CONFIG_CS752X_ACCEL_KERNEL
+	cs_accel_cb_reset_state(skb);
+#endif
 }
 EXPORT_SYMBOL(skb_recycle);
 
@@ -594,6 +819,10 @@ static void __copy_skb_header(struct sk_buff *new, const struct sk_buff *old)
 	new->ooo_okay		= old->ooo_okay;
 	new->l4_rxhash		= old->l4_rxhash;
 	new->no_fcs		= old->no_fcs;
+#ifdef CONFIG_CS75XX_NI_EXPERIMENTAL_SW_CACHE_MANAGEMENT
+	/* ...reset buffer dirty flag (if cloning, will be adjusted later) */
+	new->dirty_buffer = 1;
+#endif /* CONFIG_CS75XX_NI_EXPERIMENTAL_SW_CACHE_MANAGEMENT */
 #ifdef CONFIG_XFRM
 	new->sp			= secpath_get(old->sp);
 #endif
@@ -621,6 +850,10 @@ static void __copy_skb_header(struct sk_buff *new, const struct sk_buff *old)
 #endif
 #endif
 	new->vlan_tci		= old->vlan_tci;
+#ifdef CONFIG_ARCH_CS_LYNXE
+    new->priv           = NULL;
+    new->cs_own         = 0;
+#endif /* CONFIG_ARCH_CS_LYNXE */
 
 	skb_copy_secmark(new, old);
 }
@@ -633,10 +866,19 @@ static struct sk_buff *__skb_clone(struct sk_buff *n, struct sk_buff *skb)
 {
 #define C(x) n->x = skb->x
 
+#ifdef CONFIG_ARCH_GOLDENGATE
+	n->pktc_flags = skb->pktc_flags;
+	memset(n->pktc_cb, 0, sizeof(skb->pktc_cb));
+#endif
+
 	n->next = n->prev = NULL;
 	n->sk = NULL;
 	__copy_skb_header(n, skb);
 
+#ifdef CONFIG_CS75XX_NI_EXPERIMENTAL_SW_CACHE_MANAGEMENT
+	/* ...set buffer dirty flag */
+	C(dirty_buffer);
+#endif /* CONFIG_CS75XX_NI_EXPERIMENTAL_SW_CACHE_MANAGEMENT */
 	C(len);
 	C(data_len);
 	C(mac_len);
@@ -644,9 +886,23 @@ static struct sk_buff *__skb_clone(struct sk_buff *n, struct sk_buff *skb)
 	n->cloned = 1;
 	n->nohdr = 0;
 	n->destructor = NULL;
+#if defined(CONFIG_SMB_TUNING) || defined(CONFIG_CS75XX_NI_EXPERIMENTAL_SW_CACHE_MANAGEMENT)
+	n->skb_recycle = NULL;
+#endif
 	C(tail);
 	C(end);
 	C(head);
+#ifdef CONFIG_ARCH_GOLDENGATE
+#if 1 //CONFIG_SKB_UNCACHABLE_DATA
+	C(head_pa);
+#endif
+#endif /* CONFIG_ARCH_GOLDENGATE */
+#ifdef CONFIG_CS75XX_NI_EXPERIMENTAL_SW_CACHE_MANAGEMENT
+	C(map_end);
+#endif /* CONFIG_CS75XX_NI_EXPERIMENTAL_SW_CACHE_MANAGEMENT */
+#ifdef CONFIG_CS752X_ACCEL_KERNEL
+	cs_accel_cb_clone(n, skb);
+#endif
 	C(data);
 	C(truesize);
 	atomic_set(&n->users, 1);
@@ -772,6 +1028,9 @@ struct sk_buff *skb_clone(struct sk_buff *skb, gfp_t gfp_mask)
 		kmemcheck_annotate_bitfield(n, flags1);
 		kmemcheck_annotate_bitfield(n, flags2);
 		n->fclone = SKB_FCLONE_UNAVAILABLE;
+#ifdef CONFIG_CS752X_ACCEL_KERNEL
+		n->cs_cb_loc = 0;
+#endif
 	}
 
 	return __skb_clone(n, skb);
@@ -834,6 +1093,10 @@ struct sk_buff *skb_copy(const struct sk_buff *skb, gfp_t gfp_mask)
 
 	if (skb_copy_bits(skb, -headerlen, n->head, headerlen + skb->len))
 		BUG();
+
+#ifdef CONFIG_CS752X_ACCEL_KERNEL
+	cs_accel_cb_clone(n, skb);
+#endif
 
 	copy_skb_header(n, skb);
 	return n;
@@ -933,6 +1196,16 @@ int pskb_expand_head(struct sk_buff *skb, int nhead, int ntail,
 
 	size = SKB_DATA_ALIGN(size);
 
+#ifdef CONFIG_CS75XX_NI_EXPERIMENTAL_SW_CACHE_MANAGEMENT
+	/* ...if buffer is partially mapped, complete mapping */
+	if (skb->map_end && (u32)skb_tail_pointer(skb) > (u32)skb->map_end) {
+		dma_map_single(NULL, skb->map_end,
+				SKB_DATA_ALIGN(skb_tail_pointer(skb) - skb->map_end),
+				DMA_FROM_DEVICE);
+		skb->map_end = NULL;
+	}
+#endif /* CONFIG_CS75XX_NI_EXPERIMENTAL_SW_CACHE_MANAGEMENT */
+
 	/* Check if we can avoid taking references on fragments if we own
 	 * the last reference on skb->head. (see skb_release_data())
 	 */
@@ -1008,6 +1281,10 @@ adjust_others:
 	skb->cloned   = 0;
 	skb->hdr_len  = 0;
 	skb->nohdr    = 0;
+#ifdef CONFIG_CS75XX_NI_EXPERIMENTAL_SW_CACHE_MANAGEMENT
+	skb->dirty_buffer = 1;
+	skb->map_end = NULL;
+#endif /* CONFIG_CS75XX_NI_EXPERIMENTAL_SW_CACHE_MANAGEMENT */
 	atomic_set(&skb_shinfo(skb)->dataref, 1);
 	return 0;
 

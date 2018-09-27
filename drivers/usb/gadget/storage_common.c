@@ -61,8 +61,18 @@
  * DO NOT REUSE THESE IDs with any other driver!!  Ever!!
  * Instead:  allocate your own, using normal USB-IF procedures.
  */
+#ifndef CONFIG_USB_GADGET_SNPS_DWC_OTG
 #define FSG_VENDOR_ID	0x0525	/* NetChip */
 #define FSG_PRODUCT_ID	0xa4a5	/* Linux-USB File-backed Storage Gadget */
+#else
+#define FSG_VENDOR_ID			0x053f		/* Synopsys */
+#define FSG_PRODUCT_ID			0x0000		/* Linux-USB File-backed Storage Gadget */
+
+#define FSG_MANUFACTURER		"Synopsys"	/* Synopsys chip */
+/*#define FSG_RELEASE			0xffff*/	/* assigned by FSG */
+#define FSG_RELEASE			0x0280		/* Synopsys gadget release version */
+#define FSG_SERIAL			"123456789ABC"
+#endif
 
 
 /*-------------------------------------------------------------------------*/
@@ -362,9 +372,15 @@ fsg_fs_bulk_in_desc = {
 	.bLength =		USB_DT_ENDPOINT_SIZE,
 	.bDescriptorType =	USB_DT_ENDPOINT,
 
+#ifndef CONFIG_USB_GADGET_SNPS_DWC_OTG
 	.bEndpointAddress =	USB_DIR_IN,
 	.bmAttributes =		USB_ENDPOINT_XFER_BULK,
 	/* wMaxPacketSize set by autoconfiguration */
+#else
+	.bEndpointAddress =	USB_DIR_IN | 1,
+	.bmAttributes =		USB_ENDPOINT_XFER_BULK,
+	.wMaxPacketSize =	__constant_cpu_to_le16(0x40),
+#endif
 };
 
 static struct usb_endpoint_descriptor
@@ -372,9 +388,15 @@ fsg_fs_bulk_out_desc = {
 	.bLength =		USB_DT_ENDPOINT_SIZE,
 	.bDescriptorType =	USB_DT_ENDPOINT,
 
+#ifndef CONFIG_USB_GADGET_SNPS_DWC_OTG
 	.bEndpointAddress =	USB_DIR_OUT,
 	.bmAttributes =		USB_ENDPOINT_XFER_BULK,
 	/* wMaxPacketSize set by autoconfiguration */
+#else
+	.bEndpointAddress =	1,
+	.bmAttributes =		USB_ENDPOINT_XFER_BULK,
+	.wMaxPacketSize =	__constant_cpu_to_le16(0x40),
+#endif
 };
 
 #ifndef FSG_NO_INTR_EP
@@ -384,10 +406,17 @@ fsg_fs_intr_in_desc = {
 	.bLength =		USB_DT_ENDPOINT_SIZE,
 	.bDescriptorType =	USB_DT_ENDPOINT,
 
+#ifndef CONFIG_USB_GADGET_SNPS_DWC_OTG
 	.bEndpointAddress =	USB_DIR_IN,
 	.bmAttributes =		USB_ENDPOINT_XFER_INT,
 	.wMaxPacketSize =	cpu_to_le16(2),
 	.bInterval =		32,	/* frames -> 32 ms */
+#else
+	.bEndpointAddress =	USB_DIR_IN | 3,
+	.bmAttributes =		USB_ENDPOINT_XFER_INT,
+	.wMaxPacketSize =	cpu_to_le16(2),
+	.bInterval =		32,	/* frames -> 32 ms */
+#endif
 };
 
 #ifndef FSG_NO_OTG

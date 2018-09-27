@@ -51,6 +51,15 @@
 #define gadget_is_s3c_hsotg(g)		(!strcmp("s3c-hsotg", (g)->name))
 #define gadget_is_s3c_hsudc(g)		(!strcmp("s3c-hsudc", (g)->name))
 
+#ifdef CONFIG_ARCH_GOLDENGATE
+#define	gadget_is_sh(g)			(!strcmp("sh_udc", (g)->name))
+#define	gadget_is_sa1100(g)		(!strcmp("sa1100_udc", (g)->name))
+#define	gadget_is_mq11xx(g)		(!strcmp("mq11xx_udc", (g)->name))
+#define	gadget_is_n9604(g)		(!strcmp("n9604_udc", (g)->name))
+#define gadget_is_musbhsfc(g)		(!strcmp("musbhsfc_udc", (g)->name))
+#define gadget_is_mpc8272(g)		(!strcmp("mpc8272_udc", (g)->name))
+#define	gadget_is_dwc_otg(g)		(!strcmp("dwc_otg_pcd", (g)->name))
+#endif /* CONFIG_ARCH_GOLDENGATE */
 /**
  * usb_gadget_controller_number - support bcdDevice id convention
  * @gadget: the controller being driven
@@ -74,10 +83,24 @@ static inline int usb_gadget_controller_number(struct usb_gadget *gadget)
 		return 0x02;
 	else if (gadget_is_pxa(gadget))
 		return 0x03;
+#ifdef CONFIG_ARCH_GOLDENGATE
+	else if (gadget_is_sh(gadget))
+		return 0x04;
+	else if (gadget_is_sa1100(gadget))
+		return 0x05;
+#endif /* CONFIG_ARCH_GOLDENGATE */
 	else if (gadget_is_goku(gadget))
 		return 0x06;
+#ifdef CONFIG_ARCH_GOLDENGATE
+	else if (gadget_is_mq11xx(gadget))
+		return 0x07;
+#endif /* CONFIG_ARCH_GOLDENGATE */
 	else if (gadget_is_omap(gadget))
 		return 0x08;
+#ifdef CONFIG_ARCH_GOLDENGATE
+	else if (gadget_is_n9604(gadget))
+		return 0x10;
+#endif /* CONFIG_ARCH_GOLDENGATE */
 	else if (gadget_is_pxa27x(gadget))
 		return 0x11;
 	else if (gadget_is_s3c2410(gadget))
@@ -86,8 +109,16 @@ static inline int usb_gadget_controller_number(struct usb_gadget *gadget)
 		return 0x13;
 	else if (gadget_is_imx(gadget))
 		return 0x14;
+#ifdef CONFIG_ARCH_GOLDENGATE
+	else if (gadget_is_musbhsfc(gadget))
+		return 0x15;
+#endif /* CONFIG_ARCH_GOLDENGATE */
 	else if (gadget_is_musbhdrc(gadget))
 		return 0x16;
+#ifdef CONFIG_ARCH_GOLDENGATE
+	else if (gadget_is_mpc8272(gadget))
+		return 0x17;
+#endif /* CONFIG_ARCH_GOLDENGATE */
 	else if (gadget_is_atmel_usba(gadget))
 		return 0x18;
 	else if (gadget_is_fsl_usb2(gadget))
@@ -118,6 +149,10 @@ static inline int usb_gadget_controller_number(struct usb_gadget *gadget)
 		return 0x31;
 	else if (gadget_is_dwc3(gadget))
 		return 0x32;
+#ifdef CONFIG_ARCH_GOLDENGATE
+	else if (gadget_is_dwc_otg(gadget))
+		return 0x33;
+#endif /* CONFIG_ARCH_GOLDENGATE */
 
 	return -ENOENT;
 }
@@ -136,6 +171,11 @@ static inline bool gadget_supports_altsettings(struct usb_gadget *gadget)
 	/* PXA 27x and 3xx have *broken* altsetting support */
 	if (gadget_is_pxa27x(gadget))
 		return false;
+#ifdef CONFIG_ARCH_GOLDENGATE
+	/* SH3 hardware just doesn't do altsettings */
+	if (gadget_is_sh(gadget))
+		 return false;
+#endif /* CONFIG_ARCH_GOLDENGATE */
 
 	/* Everything else is *presumably* fine ... */
 	return true;

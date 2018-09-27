@@ -45,6 +45,10 @@
 #include <net/rtnetlink.h>
 #include <net/xfrm.h>
 
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+#include <mach/cs_kernel_hook_api.h>
+#endif
+
 #ifndef CONFIG_IP_MULTIPLE_TABLES
 
 static int __net_init fib4_rules_init(struct net *net)
@@ -951,6 +955,12 @@ static void nl_fib_lookup_exit(struct net *net)
 
 static void fib_disable_ip(struct net_device *dev, int force, int delay)
 {
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+        printk("%s: dev->name=%s, force=%d, delay=%d\n", __func__, dev->name, force, delay);
+        if (cs_kernel_hook_ops.kho_l3_route_del_ipv4_ifdown != NULL)
+                cs_kernel_hook_ops.kho_l3_route_del_ipv4_ifdown(0, dev->ifindex);
+#endif
+
 	if (fib_sync_down_dev(dev, force))
 		fib_flush(dev_net(dev));
 	rt_cache_flush(dev_net(dev), delay);

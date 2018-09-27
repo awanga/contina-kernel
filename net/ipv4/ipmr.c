@@ -66,6 +66,21 @@
 #include <net/netlink.h>
 #include <net/fib_rules.h>
 
+#ifdef CONFIG_ARCH_GOLDENGATE
+#include <mach/cs_mcast.h>
+
+#ifdef CONFIG_CS752X_ACCEL_KERNEL
+
+extern void k_jt_cs_mc_ipmr_set_opt_mrt_init(struct mr_table *mrt);
+extern void k_jt_cs_mc_ipmr_set_opt_mrt_done(struct mr_table *mrt);
+extern void k_jt_cs_mc_ipmr_set_opt_add_mfc_before(struct mr_table *mrt, struct mfcctl *mfc);
+extern void k_jt_cs_mc_ipmr_set_opt_del_mfc(struct mr_table *mrt, struct mfcctl *mfc);
+
+#endif
+#if 0 && defined CONFIG_CS75XX_WFO
+void cs75xx_update_multicast_flow_entry(struct net_device *, struct net_device *, struct mfcctl *, struct mfc_cache *, int);
+#endif /* CONFIG_CS75XX_WFO */
+#endif /* CONFIG_ARCH_GOLDENGATE */
 #if defined(CONFIG_IP_PIMSM_V1) || defined(CONFIG_IP_PIMSM_V2)
 #define CONFIG_IP_PIMSM	1
 #endif
@@ -548,6 +563,11 @@ static int vif_delete(struct mr_table *mrt, int vifi, int notify,
 	struct vif_device *v;
 	struct net_device *dev;
 	struct in_device *in_dev;
+#if 0 && defined CONFIG_CS75XX_WFO
+	int i;
+	LIST_HEAD(list);
+	struct mfc_cache *c, *next;
+#endif
 
 	if (vifi < 0 || vifi >= mrt->maxvif)
 		return -EADDRNOTAVAIL;
@@ -566,6 +586,16 @@ static int vif_delete(struct mr_table *mrt, int vifi, int notify,
 #ifdef CONFIG_IP_PIMSM
 	if (vifi == mrt->mroute_reg_vif_num)
 		mrt->mroute_reg_vif_num = -1;
+#endif
+#if 0 && defined CONFIG_CS75XX_WFO
+	for (i = 0; i < MFC_LINES; ++i) {
+		list_for_each_entry_safe(c, next, &mrt->mfc_cache_array[i], list) {
+			if (c->mfc_un.res.ttls[vifi] > 0) {
+				cs75xx_update_multicast_flow_entry(NULL, NULL, NULL, c, vifi);
+				c->mfc_un.res.ttls[vifi] = 0;
+			}
+		}
+	}
 #endif
 
 	if (vifi + 1 == mrt->maxvif) {
@@ -1007,6 +1037,9 @@ ipmr_cache_unresolved(struct mr_table *mrt, vifi_t vifi, struct sk_buff *skb)
 		c->mfc_parent	= -1;
 		c->mfc_origin	= iph->saddr;
 		c->mfc_mcastgrp	= iph->daddr;
+#if 0 && defined CONFIG_CS75XX_WFO
+		c->mfc_parent_real = skb->skb_iif;
+#endif
 
 		/* Reflect first query at mrouted. */
 
@@ -1051,6 +1084,9 @@ static int ipmr_mfc_delete(struct mr_table *mrt, struct mfcctl *mfc)
 {
 	int line;
 	struct mfc_cache *c, *next;
+#if 0 && defined CONFIG_CS75XX_WFO
+	int vifi;
+#endif
 
 	line = MFC_HASH(mfc->mfcc_mcastgrp.s_addr, mfc->mfcc_origin.s_addr);
 
@@ -1059,6 +1095,14 @@ static int ipmr_mfc_delete(struct mr_table *mrt, struct mfcctl *mfc)
 		    c->mfc_mcastgrp == mfc->mfcc_mcastgrp.s_addr) {
 			list_del_rcu(&c->list);
 
+#if 0 && defined CONFIG_CS75XX_WFO
+			for (vifi = 0; vifi < mrt->maxvif; ++vifi)
+				if (VIF_EXISTS(mrt, vifi))
+					cs75xx_update_multicast_flow_entry(NULL, NULL, NULL, c, vifi);
+#endif
+#ifdef CONFIG_CS752X_ACCEL_KERNEL
+			k_jt_cs_mc_ipmr_set_opt_del_mfc(mrt, mfc);
+#endif
 			ipmr_cache_free(c);
 			return 0;
 		}
@@ -1072,6 +1116,10 @@ static int ipmr_mfc_add(struct net *net, struct mr_table *mrt,
 	bool found = false;
 	int line;
 	struct mfc_cache *uc, *c;
+#if 0 && defined CONFIG_CS75XX_WFO
+	int vifi;
+	struct net_device *ingress_dev = NULL;
+#endif
 
 	if (mfc->mfcc_parent >= MAXVIFS)
 		return -ENFILE;
@@ -1089,7 +1137,28 @@ static int ipmr_mfc_add(struct net *net, struct mr_table *mrt,
 	if (found) {
 		write_lock_bh(&mrt_lock);
 		c->mfc_parent = mfc->mfcc_parent;
+#ifdef CONFIG_CS752X_ACCEL_KERNEL
+		int cs_min = c->mfc_un.res.minvif;
+		int cs_max = c->mfc_un.res.maxvif;
+#endif
+#if 0 && defined CONFIG_CS75XX_WFO
+		if (VIF_EXISTS(mrt, mfc->mfcc_parent)) {
+			ingress_dev = dev_get_by_index(net, c->mfc_parent_real);
+			for (vifi = 0; vifi < mrt->maxvif; ++vifi)
+				if (VIF_EXISTS(mrt, vifi))
+					cs75xx_update_multicast_flow_entry(ingress_dev, mrt->vif_table[vifi].dev, mfc, c, vifi);
+			if (ingress_dev != NULL)
+				dev_put(ingress_dev);
+		}
+#endif /* CONFIG_CS75XX_WFO */
+
 		ipmr_update_thresholds(mrt, c, mfc->mfcc_ttls);
+#ifdef CONFIG_CS752X_ACCEL_KERNEL
+		if ((cs_min != c->mfc_un.res.minvif) ||
+			(cs_max != c->mfc_un.res.maxvif)) {
+			k_jt_cs_mc_ipmr_set_opt_add_mfc_before(mrt, mfc);
+		}
+#endif
 		if (!mrtsock)
 			c->mfc_flags |= MFC_STATIC;
 		write_unlock_bh(&mrt_lock);
@@ -1106,6 +1175,24 @@ static int ipmr_mfc_add(struct net *net, struct mr_table *mrt,
 	c->mfc_origin = mfc->mfcc_origin.s_addr;
 	c->mfc_mcastgrp = mfc->mfcc_mcastgrp.s_addr;
 	c->mfc_parent = mfc->mfcc_parent;
+#if 0 && defined CONFIG_CS75XX_WFO
+	if (VIF_EXISTS(mrt, mfc->mfcc_parent)) {
+		spin_lock_bh(&mfc_unres_lock);
+		list_for_each_entry(uc, &mrt->mfc_unres_queue, list) {
+			if (uc->mfc_origin == c->mfc_origin && uc->mfc_mcastgrp == c->mfc_mcastgrp) {
+				c->mfc_parent_real = uc->mfc_parent_real;
+				break;
+			}
+		}
+		spin_unlock_bh(&mfc_unres_lock);
+		ingress_dev = dev_get_by_index(net, c->mfc_parent_real);
+		for (vifi = 0; vifi < mrt->maxvif; ++vifi)
+			if (VIF_EXISTS(mrt, vifi))
+				cs75xx_update_multicast_flow_entry(ingress_dev, mrt->vif_table[vifi].dev, mfc, c, vifi);
+		if (ingress_dev != NULL)
+			dev_put(ingress_dev);
+	}
+#endif /* CONFIG_CS75XX_WFO */
 	ipmr_update_thresholds(mrt, c, mfc->mfcc_ttls);
 	if (!mrtsock)
 		c->mfc_flags |= MFC_STATIC;
@@ -1210,6 +1297,11 @@ int ip_mroute_setsockopt(struct sock *sk, int optname, char __user *optval, unsi
 	struct mfcctl mfc;
 	struct net *net = sock_net(sk);
 	struct mr_table *mrt;
+#ifdef CONFIG_ARCH_GOLDENGATE
+#if 0
+	cs_mcast_address_t cs_entry;
+#endif
+#endif /* CONFIG_ARCH_GOLDENGATE */
 
 	mrt = ipmr_get_table(net, raw_sk(sk)->ipmr_table ? : RT_TABLE_DEFAULT);
 	if (mrt == NULL)
@@ -1240,11 +1332,17 @@ int ip_mroute_setsockopt(struct sock *sk, int optname, char __user *optval, unsi
 			rcu_assign_pointer(mrt->mroute_sk, sk);
 			IPV4_DEVCONF_ALL(net, MC_FORWARDING)++;
 		}
+#ifdef CONFIG_CS752X_ACCEL_KERNEL
+		k_jt_cs_mc_ipmr_set_opt_mrt_init(mrt);
+#endif
 		rtnl_unlock();
 		return ret;
 	case MRT_DONE:
 		if (sk != rcu_access_pointer(mrt->mroute_sk))
 			return -EACCES;
+#ifdef CONFIG_CS752X_ACCEL_KERNEL
+		k_jt_cs_mc_ipmr_set_opt_mrt_done(mrt);
+#endif
 		return ip_ra_control(sk, 0, NULL);
 	case MRT_ADD_VIF:
 	case MRT_DEL_VIF:
@@ -1285,6 +1383,24 @@ int ip_mroute_setsockopt(struct sock *sk, int optname, char __user *optval, unsi
 		/*
 		 *	Control PIM assert.
 		 */
+#ifdef CONFIG_ARCH_GOLDENGATE
+	case CS_L3_ENTRY_PORT_ADD:
+	case CS_L3_ENTRY_PORT_DEL:
+#if 0
+		if (optlen != sizeof(cs_mcast_address_t))
+			return -EINVAL;
+		if (copy_from_user(&cs_entry, optval, sizeof(cs_entry)))
+			return -EFAULT;
+		rtnl_lock();
+		if (optname == CS_L3_ENTRY_PORT_ADD) {
+			ret = cs_l2_mcast_address_add(0, cs_entry.sub_port, &cs_entry);
+		} else {
+			ret = cs_l2_mcast_address_delete(0, cs_entry.sub_port, &cs_entry);
+		}
+		rtnl_unlock();
+#endif
+		return 0;
+#endif /* CONFIG_ARCH_GOLDENGATE */
 	case MRT_ASSERT:
 	{
 		int v;

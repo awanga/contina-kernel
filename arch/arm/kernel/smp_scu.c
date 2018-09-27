@@ -52,7 +52,12 @@ void scu_enable(void __iomem *scu_base)
 	if (scu_ctrl & 1)
 		return;
 
+#ifndef CONFIG_ARCH_GOLDENGATE
 	scu_ctrl |= 1;
+#else /* CONFIG_ARCH_GOLDENGATE */
+	/* updated by hkou & ted 02/22/2012 */
+	scu_ctrl |= 0x29;
+#endif /* CONFIG_ARCH_GOLDENGATE */
 	__raw_writel(scu_ctrl, scu_base + SCU_CTRL);
 
 	/*

@@ -184,6 +184,11 @@ int nf_hook_slow(u_int8_t pf, unsigned int hook, struct sk_buff *skb,
 		 struct net_device *indev, struct net_device *outdev,
 		 int (*okfn)(struct sk_buff *), int thresh);
 
+#ifdef CONFIG_CORTINA_GKCI
+/* debug_Aaron on 2012/08/27 for turn on/off dynamically */
+extern int nf_ct_generic_enabled;
+#endif
+
 /**
  *	nf_hook_thresh - call a netfilter hook
  *	
@@ -197,6 +202,12 @@ static inline int nf_hook_thresh(u_int8_t pf, unsigned int hook,
 				 struct net_device *outdev,
 				 int (*okfn)(struct sk_buff *), int thresh)
 {
+#ifdef CONFIG_CORTINA_GKCI
+	/* debug_Aaron on 2012/08/27 for turn on/off dynamically */
+	if (!nf_ct_generic_enabled)
+		return 1;
+#endif
+
 	if (nf_hooks_active(pf, hook))
 		return nf_hook_slow(pf, hook, skb, indev, outdev, okfn, thresh);
 	return 1;
@@ -206,6 +217,12 @@ static inline int nf_hook(u_int8_t pf, unsigned int hook, struct sk_buff *skb,
 			  struct net_device *indev, struct net_device *outdev,
 			  int (*okfn)(struct sk_buff *))
 {
+#ifdef CONFIG_CORTINA_GKCI
+	 /* debug_Aaron on 2012/08/27 for turn on/off dynamically */
+        if (!nf_ct_generic_enabled)
+                return 1;
+#endif
+
 	return nf_hook_thresh(pf, hook, skb, indev, outdev, okfn, INT_MIN);
 }
                    
@@ -232,6 +249,11 @@ NF_HOOK_THRESH(uint8_t pf, unsigned int hook, struct sk_buff *skb,
 	       int (*okfn)(struct sk_buff *), int thresh)
 {
 	int ret = nf_hook_thresh(pf, hook, skb, in, out, okfn, thresh);
+#ifdef CONFIG_CORTINA_GKCI
+	/* debug_Aaron on 2012/08/27 for turn on/off dynamically */
+        if (!nf_ct_generic_enabled)
+                return okfn(skb);
+#endif
 	if (ret == 1)
 		ret = okfn(skb);
 	return ret;
@@ -244,6 +266,12 @@ NF_HOOK_COND(uint8_t pf, unsigned int hook, struct sk_buff *skb,
 {
 	int ret;
 
+#ifdef CONFIG_CORTINA_GKCI
+	/* debug_Aaron on 2012/08/27 for turn on/off dynamically */
+        if (!nf_ct_generic_enabled)
+                return okfn(skb);
+#endif
+
 	if (!cond ||
 	    ((ret = nf_hook_thresh(pf, hook, skb, in, out, okfn, INT_MIN)) == 1))
 		ret = okfn(skb);
@@ -255,6 +283,12 @@ NF_HOOK(uint8_t pf, unsigned int hook, struct sk_buff *skb,
 	struct net_device *in, struct net_device *out,
 	int (*okfn)(struct sk_buff *))
 {
+#ifdef CONFIG_CORTINA_GKCI
+	/* debug_Aaron on 2012/08/27 for turn on/off dynamically */
+        if (!nf_ct_generic_enabled)
+                return okfn(skb);
+#endif
+
 	return NF_HOOK_THRESH(pf, hook, skb, in, out, okfn, INT_MIN);
 }
 

@@ -2024,6 +2024,8 @@ static int ip_route_input_mc(struct sk_buff *skb, __be32 daddr, __be32 saddr,
 {
 	unsigned int hash;
 	struct rtable *rth;
+	struct neighbour *n;
+	char lladdr[8];
 	__be32 spec_dst;
 	struct in_device *in_dev = __in_dev_get_rcu(dev);
 	u32 itag = 0;
@@ -2088,6 +2090,11 @@ static int ip_route_input_mc(struct sk_buff *skb, __be32 daddr, __be32 saddr,
 
 	hash = rt_hash(daddr, saddr, dev->ifindex, rt_genid(dev_net(dev)));
 	rth = rt_intern_hash(hash, rth, skb, dev->ifindex);
+	if (dev_parse_header(skb, lladdr) > 0) {
+		n = __neigh_lookup(&arp_tbl, &saddr, dev, 1);
+		neigh_update(n, lladdr, NUD_REACHABLE, 0);
+		neigh_release(n);
+	}
 	return IS_ERR(rth) ? PTR_ERR(rth) : 0;
 
 e_nobufs:
