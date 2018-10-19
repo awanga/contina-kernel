@@ -653,7 +653,19 @@ struct sk_buff {
 	 * want to keep them across layers you have to do a skb_clone()
 	 * first. This is owned by whoever has the skb queued ATM.
 	 */
+#ifdef CONFIG_ARCH_GOLDENGATE
+	/* brcm ofld path */
+	union {
+		struct {
+			__u32			pktc_flags;
+			__u8			pktc_cb[8];
+			char			pktc_extra[36];
+		} __aligned(8);
+#endif
 	char			cb[48] __aligned(8);
+#ifdef CONFIG_ARCH_GOLDENGATE
+	};
+#endif
 
 	unsigned long		_skb_refdst;
 	void			(*destructor)(struct sk_buff *skb);
@@ -725,6 +737,9 @@ struct sk_buff {
 	__u8			wifi_acked:1;
 
 	__u8			no_fcs:1;
+#ifdef CONFIG_CS75XX_NI_EXPERIMENTAL_SW_CACHE_MANAGEMENT
+       __u8                    dirty_buffer:1;
+#endif /* CONFIG_CS75XX_NI_EXPERIMENTAL_SW_CACHE_MANAGEMENT */
 	/* Indicates the inner headers are valid in the skbuff. */
 	__u8			encapsulation:1;
 	__u8			encap_hdr_csum:1;
@@ -801,8 +816,23 @@ struct sk_buff {
 	sk_buff_data_t		end;
 	unsigned char		*head,
 				*data;
-	unsigned int		truesize;
-	atomic_t		users;
+
+#ifdef CONFIG_ARCH_GOLDENGATE
+#if 1 //CONFIG_SKB_UNCACHABLE_DATA
+	dma_addr_t              head_pa;
+#endif
+#ifdef CONFIG_CS75XX_NI_EXPERIMENTAL_SW_CACHE_MANAGEMENT
+	unsigned char           *map_end;
+#endif /* CONFIG_CS75XX_NI_EXPERIMENTAL_SW_CACHE_MANAGEMENT */
+	/*for HW ACCELERATION cs_cb poitner */
+	__u32 cs_cb_loc;
+#endif /* CONFIG_ARCH_GOLDENGATE */
+	unsigned int            truesize;
+	atomic_t                users;
+#ifdef CONFIG_ARCH_CS_LYNXE
+	void *priv;
+	__u32 cs_own;
+#endif /* CONFIG_ARCH_CS_LYNXE */
 };
 
 #ifdef __KERNEL__
@@ -2451,6 +2481,30 @@ static inline struct sk_buff *dev_alloc_skb(unsigned int length)
 {
 	return netdev_alloc_skb(NULL, length);
 }
+
+
+#ifdef CONFIG_ARCH_GOLDENGATE
+#if 1 //CONFIG_SKB_UNCACHABLE_DATA
+extern struct sk_buff *__alloc_skb_uncachable(unsigned int size,
+				gfp_t priority, int fclone, int node);
+extern struct sk_buff *dev_alloc_skb_uncachable(unsigned int length);
+
+static inline struct sk_buff *alloc_skb_uncachable(unsigned int size,
+					gfp_t priority)
+{
+	return __alloc_skb_uncachable(size, priority, 0, -1);
+}
+
+static inline struct sk_buff *__dev_alloc_skb_uncachable(unsigned int length,
+						gfp_t gfp_mask)
+{
+	struct sk_buff *skb = alloc_skb_uncachable(length + NET_SKB_PAD, gfp_mask);
+	if (likely(skb))
+		skb_reserve(skb, NET_SKB_PAD);
+	return skb;
+}
+#endif
+#endif /* CONFIG_ARCH_GOLDENGATE */
 
 
 static inline struct sk_buff *__netdev_alloc_skb_ip_align(struct net_device *dev,

@@ -1,0 +1,21 @@
+#ifndef __ASM_HARDWARE_TWD_H
+#define __ASM_HARDWARE_TWD_H
+
+#define G2_TIMER_LOAD 			0x00
+#define G2_TIMER_COUNTER		0x04
+#define G2_TIMER_CONTROL		0x08
+#define G2_TIMER_INTSTAT		0x0C
+
+#define G2_WDOG_LOAD			0x20
+#define G2_WDOG_COUNTER			0x24
+#define G2_WDOG_CONTROL			0x28
+#define G2_WDOG_INTSTAT			0x2C
+#define G2_WDOG_RESETSTAT		0x30
+#define G2_WDOG_DISABLE			0x34
+
+#define G2_TIMER_CONTROL_ENABLE		(1 << 0)
+#define G2_TIMER_CONTROL_ONESHOT	(0 << 1)
+#define G2_TIMER_CONTROL_PERIODIC	(1 << 1)
+#define G2_TIMER_CONTROL_IT_ENABLE	(1 << 2)
+
+#endif

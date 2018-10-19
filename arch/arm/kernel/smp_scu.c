@@ -55,7 +55,12 @@ void scu_enable(void __iomem *scu_base)
 	if (scu_ctrl & SCU_ENABLE)
 		return;
 
+#ifndef CONFIG_ARCH_GOLDENGATE
 	scu_ctrl |= SCU_ENABLE;
+#else /* CONFIG_ARCH_GOLDENGATE */
+	/* updated by hkou & ted 02/22/2012 */
+	scu_ctrl |= 0x29;
+#endif /* CONFIG_ARCH_GOLDENGATE */
 
 	/* Cortex-A9 earlier than r2p0 has no standby bit in SCU */
 	if ((read_cpuid_id() & 0xff0ffff0) == 0x410fc090 &&

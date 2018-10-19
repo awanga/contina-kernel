@@ -15,6 +15,7 @@
 #ifndef _LINUX_KEY_H
 #define _LINUX_KEY_H
 
+
 #include <linux/types.h>
 #include <linux/list.h>
 #include <linux/rbtree.h>
@@ -23,6 +24,16 @@
 #include <linux/rwsem.h>
 #include <linux/atomic.h>
 #include <linux/assoc_array.h>
+
+/* ENOKEY is defined in Linux 3.5 UAPI header split merge. We avoid backporting the entire 
+   Linux 3.5 UAPI header split merge by defining the necessary definition for module signing
+   here by first checking if its already defined. In Linux 3.5 UAPI split this define comes
+   in via types.h. Thus we check to see if its already defined prior to defining to avoid
+   redinition if case this code is rebased to a future revision which already contains
+   the UAPI header split merge */ 
+#ifndef ENOKEY /* define only if this code base does not already contain 3.5 UAPI header split merge */
+#define	ENOKEY	126	/* Required key not available */
+#endif /* ENOKEY */
 
 #ifdef __KERNEL__
 #include <linux/uidgid.h>

@@ -106,8 +106,15 @@ struct mfc_cache {
 			unsigned long wrong_if;
 			unsigned long lastuse;
 			unsigned char ttls[MAXVIFS];	/* TTL thresholds		*/
+#ifdef CONFIG_CS75XX_WFO
+			cs_uint16_t flow_ids[MAXVIFS];
+			cs_uint8_t flow_vifs[MAXVIFS / 8];
+#endif
 		} res;
 	} mfc_un;
+#ifdef CONFIG_CS75XX_WFO
+	int mfc_parent_real;
+#endif
 	struct rcu_head	rcu;
 };
 

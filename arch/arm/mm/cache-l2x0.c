@@ -26,6 +26,9 @@
 #include <linux/of.h>
 #include <linux/of_address.h>
 
+#ifdef CONFIG_ARCH_GOLDENGATE
+#include <linux/module.h> // --added to have "EXPORT_SYMBOL"
+#endif /* CONFIG_ARCH_GOLDENGATE */
 #include <asm/cacheflush.h>
 #include <asm/cp15.h>
 #include <asm/cputype.h>
@@ -50,7 +53,13 @@ struct l2c_init_data {
 
 static void __iomem *l2x0_base;
 static const struct l2c_init_data *l2x0_data;
+#ifndef CONFIG_ARCH_GOLDENGATE
 static DEFINE_RAW_SPINLOCK(l2x0_lock);
+#else /* CONFIG_ARCH_GOLDENGATE */
+/*static*/ DEFINE_RAW_SPINLOCK(l2x0_lock);
+EXPORT_SYMBOL(l2x0_lock);    // --exported lock handle for wl.ko
+#endif /* CONFIG_ARCH_GOLDENGATE */
+
 static u32 l2x0_way_mask;	/* Bitmask of active ways */
 static u32 l2x0_size;
 static unsigned long sync_reg_offset = L2X0_CACHE_SYNC;
@@ -817,6 +826,10 @@ static int __init __l2c_init(const struct l2c_init_data *data,
 		pr_warn("L2C: DT/platform modifies aux control register: 0x%08x -> 0x%08x\n",
 		        old_aux, aux);
 
+#ifdef CONFIG_PL310_ERRATA_780370
+	/* Disable parity check */
+	aux &= ~0x00200000;
+#endif
 	/* Determine the number of ways */
 	switch (cache_id & L2X0_CACHE_ID_PART_MASK) {
 	case L2X0_CACHE_ID_PART_L310:

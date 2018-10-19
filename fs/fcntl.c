@@ -380,6 +380,9 @@ out1:
 out:
 	return err;
 }
+#ifdef CONFIG_ARCH_GOLDENGATE
+EXPORT_SYMBOL(sys_fcntl);	/* D2 MOD */
+#endif /* CONFIG_ARCH_GOLDENGATE */
 
 #if BITS_PER_LONG == 32
 SYSCALL_DEFINE3(fcntl64, unsigned int, fd, unsigned int, cmd,

@@ -4,6 +4,8 @@
 #include <uapi/linux/kernel-page-flags.h>
 
 
+#ifdef __KERNEL__
+
 /* kernel hacking assistances
  * WARNING: subject to change, never rely on them!
  */
@@ -16,5 +18,7 @@
 #define KPF_ARCH		38
 #define KPF_UNCACHED		39
 #define KPF_SOFTDIRTY		40
+
+#endif /* __KERNEL__ */
 
 #endif /* LINUX_KERNEL_PAGE_FLAGS_H */

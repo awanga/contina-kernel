@@ -15,6 +15,13 @@
 
 #include "reboot.h"
 
+#ifdef CONFIG_ARCH_GOLDENGATE
+#include <mach/hardware.h>
+#include <mach/platform.h>
+#include <asm/hardware/cache-l2x0.h>
+#include <asm/io.h>
+#endif
+
 typedef void (*phys_reset_t)(unsigned long);
 
 /*
@@ -43,11 +50,26 @@ static void __soft_restart(void *addr)
 	/* Clean and invalidate caches */
 	flush_cache_all();
 
+#ifdef CONFIG_ARCH_GOLDENGATE
+	dsb();
+
+	outer_flush_range(0, 0x20000000);
+	dsb();
+#endif /* CONFIG_ARCH_GOLDENGATE */
+
 	/* Turn off caching */
 	cpu_proc_fin();
 
+#ifndef CONFIG_ARCH_GOLDENGATE
 	/* Push out any further dirty data, and ensure cache is empty */
 	flush_cache_all();
+#else /* CONFIG_ARCH_GOLDENGATE */
+#ifdef CONFIG_CACHE_L2X0
+	/* Disable L2 */
+	writel_relaxed(0, IO_ADDRESS(GOLDENGATE_L220_BASE) + L2X0_CTRL);
+#endif
+	dsb();
+#endif /* CONFIG_ARCH_GOLDENGATE */
 
 	/* Switch to the identity mapping. */
 	phys_reset = (phys_reset_t)virt_to_idmap(cpu_reset);

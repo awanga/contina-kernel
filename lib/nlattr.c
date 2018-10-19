@@ -12,6 +12,7 @@
 #include <linux/skbuff.h>
 #include <linux/string.h>
 #include <linux/types.h>
+#include <linux/ratelimit.h>
 #include <net/netlink.h>
 
 static const u16 nla_attr_minlen[NLA_TYPE_MAX+1] = {

@@ -207,6 +207,15 @@ config ZIIRAVE_WATCHDOG
 
 # ARM Architecture
 
+config	G2_WATCHDOG
+	tristate "GoldenGate Watchdog"
+	depends on ARCH_GOLDENGATE
+	help
+	  Watchdog timer block in the Samsung S3C2410 chips. This will
+	  reboot the system when the timer expires with the watchdog
+	  enabled.
+
+
 config ARM_SP805_WATCHDOG
 	tristate "ARM SP805 Watchdog"
 	depends on (ARM || ARM64) && ARM_AMBA

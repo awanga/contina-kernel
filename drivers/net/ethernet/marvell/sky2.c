@@ -5081,6 +5081,11 @@ static int sky2_probe(struct pci_dev *pdev, const struct pci_device_id *ent)
 	pci_set_drvdata(pdev, hw);
 	pdev->d3_delay = 200;
 
+#ifdef CONFIG_CORTINA_GKCI
+	//debug_Aaron
+        pcie_set_readrq(pdev, 512);
+#endif
+
 	return 0;
 
 err_out_unregister_dev1:

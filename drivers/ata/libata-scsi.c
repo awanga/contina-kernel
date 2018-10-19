@@ -1221,7 +1221,11 @@ static int ata_scsi_dev_config(struct scsi_device *sdev,
 			return -ENOMEM;
 		}
 
+#ifdef CONFIG_CORTINA_GKCI
+		blk_queue_dma_drain(q, atapi_drain_needed, buf, 0);
+#else
 		blk_queue_dma_drain(q, atapi_drain_needed, buf, ATAPI_MAX_DRAIN);
+#endif
 	} else {
 		sdev->sector_size = ata_id_logical_sector_size(dev->id);
 		sdev->manage_start_stop = 1;

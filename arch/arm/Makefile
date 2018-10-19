@@ -103,6 +103,8 @@ tune-$(CONFIG_CPU_V6K)		=$(call cc-option,-mtune=arm1136j-s,-mtune=strongarm)
 # Evaluate tune cc-option calls now
 tune-y := $(tune-y)
 
+tune-$(CONFIG_ARCH_GOLDENGATE) := -mcpu=cortex-a9 -mtune=cortex-a9 -mfpu=vfpv3-d16
+
 ifeq ($(CONFIG_AEABI),y)
 CFLAGS_ABI	:=-mabi=aapcs-linux -mno-thumb-interwork -mfpu=vfp
 else
@@ -126,6 +128,11 @@ else
 CFLAGS_ISA	:=$(call cc-option,-marm,)
 AFLAGS_ISA	:=$(CFLAGS_ISA)
 endif
+
+# -msoft-float
+float_abi-$(CONFIG_BINFMT_FLOAT_ABI_SOFT)   :=-mfloat-abi=soft
+float_abi-$(CONFIG_BINFMT_FLOAT_ABI_SOFTFP) :=-mfloat-abi=softfp
+float_abi-$(CONFIG_BINFMT_FLOAT_ABI_HARD)   :=-mfloat-abi=hard
 
 # Need -Uarm for gcc < 3.x
 KBUILD_CFLAGS	+=$(CFLAGS_ABI) $(CFLAGS_ISA) $(arch-y) $(tune-y) $(call cc-option,-mshort-load-bytes,$(call cc-option,-malignment-traps,)) -msoft-float -Uarm
@@ -168,6 +175,7 @@ machine-$(CONFIG_ARCH_EP93XX)		+= ep93xx
 machine-$(CONFIG_ARCH_EXYNOS)		+= exynos
 machine-$(CONFIG_ARCH_FOOTBRIDGE)	+= footbridge
 machine-$(CONFIG_ARCH_GEMINI)		+= gemini
+machine-$(CONFIG_ARCH_GOLDENGATE)	:= goldengate
 machine-$(CONFIG_ARCH_HIGHBANK)		+= highbank
 machine-$(CONFIG_ARCH_HISI)		+= hisi
 machine-$(CONFIG_ARCH_INTEGRATOR)	+= integrator

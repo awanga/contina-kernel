@@ -55,6 +55,8 @@ MODULE_AUTHOR("Jozsef Kadlecsik <kadlec@blackhole.kfki.hu>");
 MODULE_DESCRIPTION("core IP set support");
 MODULE_ALIAS_NFNL_SUBSYS(NFNL_SUBSYS_IPSET);
 
+void (*ip_set_modified)(struct net *, u16, void *, void *) = NULL;
+
 /* When the nfnl mutex is held: */
 #define ip_set_dereference(p)		\
 	rcu_dereference_protected(p, 1)

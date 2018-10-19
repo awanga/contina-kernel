@@ -69,6 +69,16 @@
 #define SIZE_REMAINING ULLONG_MAX
 #define OFFSET_CONTINUOUS ULLONG_MAX
 
+#ifdef CONFIG_ARCH_CS_LYNXE
+/*
+ * cs mtd partition
+ *     Cortina flash can support up to 15 partition in flash.
+ */
+#define CS_MAX_MTD_PART     15
+struct mtd_partition cs_mtd_partitions[CS_MAX_MTD_PART];
+int cs_mtd_part_count = 0;
+#endif /* CONFIG_ARCH_CS_LYNXE */
+
 struct cmdline_mtd_partition {
 	struct cmdline_mtd_partition *next;
 	char *mtd_id;
@@ -208,6 +218,12 @@ static struct mtd_partition * newpart(char *s,
 	/* return (updated) pointer to extra_mem memory */
 	if (extra_mem_ptr)
 		*extra_mem_ptr = extra_mem;
+
+#ifdef CONFIG_ARCH_CS_LYNXE
+    /* copy to cs_table which is init'ed in daytona.c */
+    if (cs_mtd_part_count < CS_MAX_MTD_PART)
+        memcpy(&cs_mtd_partitions[cs_mtd_part_count++], &parts[this_part], sizeof(struct mtd_partition));
+#endif /* CONFIG_ARCH_CS_LYNXE */
 
 	/* return (updated) pointer command line string */
 	*retptr = s;
@@ -378,6 +394,41 @@ static int __init mtdpart_setup(char *s)
 	cmdline = s;
 	return 1;
 }
+
+#ifdef CONFIG_ARCH_CS_LYNXE
+/*
+ * cs_mtdpart_setup:
+ *     This is called from init daytona.c
+ *     mtd partition info is parsed and stored in partition table.
+ *     Which is then used to init mtd partition.
+ */
+int cs_mtdpart_setup(void)
+{
+    int mtd_ret, idx;
+    struct mtd_partition tmp_mtd;
+
+    mtd_ret = mtdpart_setup_real(cmdline);
+    printk("CS retutn vlaue for cmdline parser [0x%x]\n", mtd_ret);
+
+    if (mtd_ret) {
+        /* reverse the mtd order since the parser store in reverse order */
+        memset(&tmp_mtd, 0, sizeof(struct mtd_partition));
+        for (idx=0; idx < (cs_mtd_part_count/2); idx++) {
+            memcpy(&tmp_mtd, &cs_mtd_partitions[idx],
+                   sizeof(struct mtd_partition));
+            memcpy(&cs_mtd_partitions[idx],
+                   &cs_mtd_partitions[cs_mtd_part_count - idx - 1],
+                   sizeof(struct mtd_partition));
+            memcpy(&cs_mtd_partitions[cs_mtd_part_count - idx - 1],
+                   &tmp_mtd, sizeof(struct mtd_partition));
+            memset(&tmp_mtd, 0, sizeof(struct mtd_partition));
+        }
+    }
+
+    /* zero is considered to be a bad cmdline arg for mtd partition */
+    return mtd_ret;
+}
+#endif /* CONFIG_ARCH_CS_LYNXE */
 
 __setup("mtdparts=", mtdpart_setup);
 

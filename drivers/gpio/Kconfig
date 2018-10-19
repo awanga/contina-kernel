@@ -843,6 +843,12 @@ config GPIO_CS5535
 
 	  If unsure, say N.
 
+config GPIO_CS75XX
+	bool "Cortina CS75XX GPIO"
+	depends on ARCH_GOLDENGATE
+	help
+	  Say Y here to support Cortina CS75XX GPIO.
+
 config GPIO_DA9052
 	tristate "Dialog DA9052 GPIO"
 	depends on PMIC_DA9052

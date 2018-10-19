@@ -1,0 +1,49 @@
+menu "LynxE based"
+	depends on ARCH_CS_LYNXE
+config REF_BOARD
+        bool "Reference Board"
+        default y
+        help
+          This enables Reference Board specific code on Cortina LynxE based platforms.
+	  If you have such a board, say 'Y'.
+	  This includes specific configurations for the board and its peripherals.
+
+config LYNXE_PERIPHERAL_FREQ
+        int "Peripheral clock freq in Hz"
+        default  100000000
+        help
+        Selects the peripheral clock frequency used
+        by the timer and uart. Peripheral clock frequency 
+        for lynxe is DDR clock frequency / 4.
+        Default is 100Mhz as DDR clock frequency default is 400Mhz
+
+config LYNXE_FLASH_SIZE
+        int "LynxE Flash size"
+        default 16777216
+        help
+        Specifies the flash size in bytes available
+        in the board. Default is 16MB [16777216]
+
+config LYNXE_PAYLOAD_MEMBASE
+        int "LynxE Payload Memory base address"
+        default 1140850688 
+        help
+        Specifies the payload DDR base address
+        Default is 0x44000000 [1140850688]
+
+config LYNXE_PAYLOAD_MEMSIZE
+        int "LynxE Payload Memory size"
+        default 201326592 
+        help
+        Specifies the payload DDR size in bytes
+        Default is 192MBytes [201326592]
+
+config LYNXE_KERNEL_HOOK
+        bool "LynxE Kernel Hook Support"
+        default n 
+        help
+          This enables kernel hook support for NI driver fast path.
+          If you would like to have NI driver fast path support, say 'Y'.
+
+endmenu
+

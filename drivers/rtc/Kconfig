@@ -1531,6 +1531,14 @@ config RTC_DRV_PCAP
 	  If you say Y here you will get support for the RTC found on
 	  the PCAP2 ASIC used on some Motorola phones.
 
+config RTC_DRV_G2
+	tristate "GoldenGate RTC"
+	depends on ARCH_GOLDENGATE
+	help
+	  If you say Y here you will get support for the RTC found on
+	  the GoldenGate Soc.
+
+
 config RTC_DRV_MC13XXX
 	depends on MFD_MC13XXX
 	tristate "Freescale MC13xxx RTC"

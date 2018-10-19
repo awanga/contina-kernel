@@ -93,6 +93,16 @@ extern int pps_register_cdev(struct pps_device *pps);
 extern void pps_unregister_cdev(struct pps_device *pps);
 
 /*
+ * Internal functions.
+ *
+ * These are not actually part of the exported API, but this is a
+ * convenient header file to put them in.
+ */
+
+extern int pps_register_cdev(struct pps_device *pps);
+extern void pps_unregister_cdev(struct pps_device *pps);
+
+/*
  * Exported functions
  */
 

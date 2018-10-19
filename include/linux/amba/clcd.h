@@ -315,7 +315,11 @@ static inline void clcdfb_decode(struct clcd_fb *fb, struct clcd_regs *regs)
 		 * control register.  It is possible to use 565 with
 		 * custom external wiring.
 		 */
+#if defined(CONFIG_FB_CS752X_CLCD)
+		if (amba_part(fb->dev) == 0x111 ||
+#else
 		if (amba_part(fb->dev) == 0x110 ||
+#endif
 		    var->green.length == 5)
 			val |= CNTL_LCDBPP16;
 		else if (var->green.length == 6)

@@ -16,6 +16,9 @@ struct qdisc_walker;
 struct tcf_walker;
 struct module;
 
+#ifdef CONFIG_CS752X_HW_ACCELERATION
+void cs_qos_set_skb_sw_only(struct sk_buff *skb);
+#endif
 struct qdisc_rate_table {
 	struct tc_ratespec rate;
 	u32		data[256];
@@ -88,6 +91,16 @@ struct Qdisc {
 	struct gnet_stats_basic_packed bstats;
 	seqcount_t		running;
 	struct gnet_stats_queue	qstats;
+
+#ifdef CONFIG_CS752X_HW_ACCELERATION
+	/*
+	 * Cortina Hardware Accel
+	 */
+	u8			cs_handle;
+#define CS_QOS_IS_MULTIQ	(1 << 7)
+#define CS_QOS_HWQ_MAP		(1 << 6)
+#endif /* CONFIG_CS752X_HW_ACCELERATION */
+
 	unsigned long		state;
 	struct Qdisc            *next_sched;
 	struct sk_buff		*skb_bad_txq;
@@ -515,6 +528,14 @@ static inline int qdisc_enqueue(struct sk_buff *skb, struct Qdisc *sch,
 				struct sk_buff **to_free)
 {
 	qdisc_calculate_pkt_len(skb, sch);
+#ifdef CONFIG_CS752X_HW_ACCELERATION
+	/* Cortina Acceleration
+	 * Check if this skb is enqueuing into MultiQ, if not, then this skb 
+	 * cannot be hardware accelerated by flow-based definition. */
+	if ((!(CS_QOS_IS_MULTIQ & sch->cs_handle)) &&
+			(!(sch->flags & TCQ_F_INGRESS)))
+		cs_qos_set_skb_sw_only(skb);
+#endif
 	return sch->enqueue(skb, sch, to_free);
 }
 

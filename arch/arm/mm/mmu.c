@@ -42,6 +42,10 @@
 #include "mm.h"
 #include "tcm.h"
 
+#ifdef CONFIG_ARCH_GOLDENGATE
+#include <mach/platform.h>
+#endif
+
 /*
  * empty_zero_page is a special page that is used for
  * zero-initialized data and COW.
@@ -1295,6 +1299,14 @@ void __init arm_mm_memblock_reserve(void)
 	 * precious DMA-able memory...
 	 */
 	memblock_reserve(PHYS_OFFSET, __pa(swapper_pg_dir) - PHYS_OFFSET);
+#endif
+#ifdef CONFIG_ARCH_GOLDENGATE
+/*#ifdef CONFIG_G2_IPC2RCPU*/
+
+	/* Reserve share memory for IPC */
+	memblock_reserve(GOLDENGATE_IPC_BASE - 0x500000,
+				GOLDENGATE_IPC_MEM_SIZE + 0x500000);
+/*#endif*/
 #endif
 }
 

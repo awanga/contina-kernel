@@ -2919,4 +2919,6 @@ MODULE_PARM_DESC(recover_lost_locks,
 		 "try to recover it risking data corruption.");
 
 
+MODULE_ALIAS("nfs4");
+
 #endif /* CONFIG_NFS_V4 */

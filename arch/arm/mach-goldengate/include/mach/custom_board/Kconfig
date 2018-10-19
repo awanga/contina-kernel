@@ -1,0 +1,44 @@
+menu "G2 Custom Board ID"
+	depends on CORTINA_CUSTOM_BOARD
+
+choice
+	prompt "G2 Custom Board ID"
+# patch start HERE:
+#
+#  Apply a patch to modify this file to replace everything between the start HERE and stop HERE comments lines
+#  including the comment lines themselves.
+#
+#  WARNING: DO NOT MODIFIY THIS FILE DIRECTLY!!!  This file will be overwritten iIn future Cortina releases.
+#  Apply a patch to modify this file instead. 
+# 
+#  Change default as desired.
+	default CORTINA_CUSTOM_BOARD_ID_TEMPLATE
+	help
+  	  Pick the G2 platform to build
+# Please leave the template board as an available type, just add more boards and change the default above
+# as desired.
+source "arch/arm/mach-goldengate/include/mach/custom_board/template/cfg_Kconfig.custom.board.id"
+#source "arch/arm/mach-goldengate/include/mach/custom_board/myboard_name/cfg_Kconfig.custom.board.id"
+
+# patch end HERE:
+
+endchoice
+
+# patch start HERE:
+#
+#  Apply a patch to modify this file to replace everything between the start HERE and stop HERE comments lines
+#  including the comment lines themselves.
+#
+#  WARNING: DO NOT MODIFIY THIS FILE DIRECTLY!!!  This file will be overwritten iIn future Cortina releases.
+#  Apply a patch to modify this file instead. 
+# 
+# If your Custom Board has additional features controlled by Kconfig, you can patch in your Custom Kconfig 
+# hook location below. This enables creation of new menus as desired. 
+# for example:
+#
+source "arch/arm/mach-goldengate/include/mach/custom_board/template/Kconfig"
+#source "arch/arm/mach-goldengate/include/mach/custom_board/myboard_name/Kconfig"
+#
+# patch end HERE:
+
+endmenu

@@ -20,6 +20,14 @@ obj-$(CONFIG_PRINTER)		+= lp.o
 
 obj-$(CONFIG_APM_EMULATION)	+= apm-emulation.o
 
+EXTRA_CFLAGS += -I$(srctree)/drivers/net/ethernet/cs752x/src/include
+obj-$(CONFIG_CS75XX_PWC)	+= cs75xx_pwr.o
+obj-$(CONFIG_CS75XX_REG_RW)     += cs75xx_reg.o
+obj-$(CONFIG_CS75xx_IPC2RCPU)   += cs75xx_ipc_re.o
+ifdef CONFIG_CS75XX_WFO
+obj-$(CONFIG_CS75xx_IPC_WFO)    += cs75xx_ipc_wfo.o cs75xx_wfo.o cs75xx_wfo_brcm_rpc.o
+endif
+
 obj-$(CONFIG_DTLK)		+= dtlk.o
 obj-$(CONFIG_APPLICOM)		+= applicom.o
 obj-$(CONFIG_SONYPI)		+= sonypi.o

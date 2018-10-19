@@ -1,0 +1,16 @@
+config DVB_CS75XX_TS
+	tristate "CS75XX Transport Stream"
+	depends on DVB_CORE
+	help
+          Since this module have no MPEG decoder onboard, they transmit
+	  only compressed MPEG data over the AXI bus, so you need
+	  an external software decoder to watch TV on your computer.
+
+	  Say Y or M if you own such a device and want to use it.
+
+config DVB_MXL241SF
+        bool "Use with MxL241SF Tuner/Demodulator kernel module"
+        depends on DVB_CS75XX_TS
+        help
+          If you are using this module along with the MxL241SF, then
+          you should select this option.

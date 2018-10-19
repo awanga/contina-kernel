@@ -95,6 +95,10 @@ struct tc_u_common {
 	struct rcu_head		rcu;
 };
 
+#ifdef CONFIG_CS752X_HW_ACCELERATION
+extern void cs_qos_check_qos_fields(struct sk_buff *skb, int offset, u32 mask);
+#endif
+
 static inline unsigned int u32_hash_fold(__be32 key,
 					 const struct tc_u32_sel *sel,
 					 u8 fshift)
@@ -163,6 +167,9 @@ next_knode:
 				n = rcu_dereference_bh(n->next);
 				goto next_knode;
 			}
+#ifdef CONFIG_CS752X_HW_ACCELERATION
+			cs_qos_check_qos_fields(skb, toff, key->mask);
+#endif
 #ifdef CONFIG_CLS_U32_PERF
 			__this_cpu_inc(n->pf->kcnts[j]);
 			j++;

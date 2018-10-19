@@ -14,6 +14,13 @@
 
 static unsigned int nf_ct_generic_timeout __read_mostly = 600*HZ;
 
+#ifdef CONFIG_CORTINA_GKCI
+#include <linux/export.h>
+/* debug_Aaron on 2012/08/27 for turn on/off netfilter dynamically */
+int nf_ct_generic_enabled=0;
+EXPORT_SYMBOL(nf_ct_generic_enabled);
+#endif
+
 static bool nf_generic_should_process(u8 proto)
 {
 	switch (proto) {
@@ -149,6 +156,16 @@ static struct ctl_table generic_sysctl_table[] = {
 		.mode		= 0644,
 		.proc_handler	= proc_dointvec_jiffies,
 	},
+#ifdef CONFIG_CORTINA_GKCI
+	/* debug_Aaron on 2012/08/27 for turn on/off netfilter dynamically */
+	{
+                .procname       = "nf_conntrack_generic_enabled",
+                .data           = &nf_ct_generic_enabled,
+                .maxlen         = sizeof(unsigned int),
+                .mode           = 0644,
+                .proc_handler   = proc_dointvec_jiffies,
+        },
+#endif
 	{ }
 };
 #endif /* CONFIG_SYSCTL */

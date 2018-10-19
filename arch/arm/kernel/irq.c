@@ -60,6 +60,27 @@ int arch_show_interrupts(struct seq_file *p, int prec)
 	return 0;
 }
 
+#ifdef CONFIG_DEBUG_STACKOVERFLOW
+/* Debugging check for stack overflow: is there less than 1KB free? */
+static int check_stack_overflow(void)
+{
+#define STACK_WARN 1024
+	register unsigned long current_sp asm ("sp");
+
+	return (current_sp & (THREAD_SIZE-1)) < (sizeof(struct thread_info) + STACK_WARN);
+}
+
+static void print_stack_overflow(void)
+{
+	printk(KERN_WARNING "low stack detected by irq handler\n");
+	BUG();
+	dump_stack();
+}
+#else
+static inline int check_stack_overflow(void) { return 0; }
+static inline void print_stack_overflow(void) { }
+#endif
+
 /*
  * handle_IRQ handles all hardware IRQ's.  Decoded IRQs should
  * not come via this function.  Instead, they should provide their

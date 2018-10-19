@@ -89,6 +89,15 @@
 #include <asm/sections.h>
 #include <asm/cacheflush.h>
 
+#ifdef CONFIG_ARCH_GOLDENGATE
+#ifdef CONFIG_ACP
+#include <linux/dma-mapping.h>
+#include <mach/registers.h>
+#include <mach/hardware.h>
+int verify_acp(void);
+extern unsigned int acp_enabled;
+#endif
+#endif /* CONFIG_ARCH_GOLDENGATE */
 static int kernel_init(void *);
 
 extern void init_IRQ(void);
@@ -121,6 +130,9 @@ void (*__initdata late_time_init)(void);
 char __initdata boot_command_line[COMMAND_LINE_SIZE];
 /* Untouched saved command line (eg. for /proc) */
 char *saved_command_line;
+#ifdef CONFIG_ARCH_GOLDENGATE
+EXPORT_SYMBOL(saved_command_line);
+#endif /* CONFIG_ARCH_GOLDENGATE */
 /* Command line for parameter parsing */
 static char *static_command_line;
 /* Command line for per-initcall parameter parsing */
@@ -1017,6 +1029,12 @@ static noinline void __init kernel_init_freeable(void)
 
 	do_basic_setup();
 
+#ifdef CONFIG_ARCH_GOLDENGATE
+#ifdef CONFIG_ACP
+	verify_acp();
+#endif
+#endif /* CONFIG_ARCH_GOLDENGATE */
+
 	/* Open the /dev/console on the rootfs, this should never fail */
 	if (sys_open((const char __user *) "/dev/console", O_RDWR, 0) < 0)
 		pr_err("Warning: unable to open an initial console.\n");
@@ -1048,3 +1066,127 @@ static noinline void __init kernel_init_freeable(void)
 	integrity_load_keys();
 	load_default_modules();
 }
+#ifdef CONFIG_ARCH_GOLDENGATE
+#ifdef CONFIG_ACP
+
+#include <mach/g2-acp.h>
+
+/* This API was used to vefify if ACP work well.
+ * If data mismatch, disable ACP setting.
+ * In this test, we fill buffer content after cache coherence.
+ * This is intended to check if HW coherence well
+ *
+ */
+int verify_acp()
+{
+	int i, j, ret_v = -1;
+	unsigned int tmp;
+	dma_addr_t src_phy, dst_phy;
+#define BUFF_CNT_FOR_TEST	64
+#define BUFF_SIZE_FOR_TEST	8192
+	unsigned int *psrc_buf[BUFF_CNT_FOR_TEST];	/* 64 * 8K ==> 512KB */
+	unsigned int *pdst_buf[BUFF_CNT_FOR_TEST];
+	struct device dummy = {0};
+
+	GLOBAL_ARM_CONFIG_D_t gbl_arm_cfg_d;
+
+	gbl_arm_cfg_d.wrd = readl((volatile void __iomem *)GLOBAL_ARM_CONFIG_D);
+	/* Enable ACP for peripheral DMA */
+	gbl_arm_cfg_d.bf.periph_user = 1;
+	gbl_arm_cfg_d.bf.periph_cache = 0xf;
+	writel(gbl_arm_cfg_d.wrd, (volatile void __iomem *)GLOBAL_ARM_CONFIG_D);
+	acp_enabled = 0;
+
+	set_dma_ops(&dummy, &acp_dma_ops);
+	/* Enable DMA */
+	tmp = readl(IO_ADDRESS(DMA_DMA_LSO_RXDMA_CONTROL));
+	writel(tmp | 0x0D, IO_ADDRESS(DMA_DMA_LSO_RXDMA_CONTROL));
+	tmp = readl(IO_ADDRESS(DMA_DMA_LSO_TXDMA_CONTROL));
+	writel(tmp | 0x0D, IO_ADDRESS(DMA_DMA_LSO_TXDMA_CONTROL));
+
+	/* Init all pointer to NULL */
+	for (i = 0; i < BUFF_CNT_FOR_TEST; i++) {
+		psrc_buf[i] = NULL;
+		pdst_buf[i] = NULL;
+	}
+
+	/* Fill source and trig DMA */
+	for (i = 0; i < BUFF_CNT_FOR_TEST; i++) {
+		psrc_buf[i] = kmalloc(BUFF_SIZE_FOR_TEST, GFP_KERNEL);
+		pdst_buf[i] = kmalloc(BUFF_SIZE_FOR_TEST, GFP_KERNEL);
+		if ((psrc_buf[i] == NULL) || (pdst_buf[i] == NULL)) {
+			pr_err("Allocate buff fail for ACP test!!\n");
+			pr_err("Disable ACP\n");
+			ret_v = -1;
+			goto out;
+		}
+
+		/* fill content after and flush to DDR */
+		for (j = 0; j < BUFF_SIZE_FOR_TEST / sizeof(int); j++)
+			psrc_buf[i][j] = 0x5af05000|j;
+
+		src_phy = dma_map_single(&dummy, psrc_buf[i], BUFF_SIZE_FOR_TEST,
+					 DMA_TO_DEVICE);
+
+		dst_phy = dma_map_single(&dummy, pdst_buf[i], BUFF_SIZE_FOR_TEST,
+					 DMA_FROM_DEVICE);
+
+		/* Out of range testing */
+//		src_phy += 0x20000000;	// 512MB
+//		dst_phy += 0x20000000;
+
+		/* fill content after dma_map() intend for ACP verification */
+		for (j = 0; j < BUFF_SIZE_FOR_TEST / sizeof(int); j++)
+			psrc_buf[i][j] = (i << 16) | j;
+
+		/* Enable BMC0 */
+		writel(src_phy, IO_ADDRESS(DMA_DMA_LSO_BMC0_SOURCE_ADDR));
+		writel(dst_phy, IO_ADDRESS(DMA_DMA_LSO_BMC0_DESTINATION_ADDR));
+		writel(BUFF_SIZE_FOR_TEST,
+		       IO_ADDRESS(DMA_DMA_LSO_BMC0_COPY_BYTE));
+		readl(IO_ADDRESS(DMA_DMA_LSO_BMC0_COPY_BYTE));
+		writel(1, IO_ADDRESS(DMA_DMA_LSO_BMC0_START));
+		/* Wait finish bit */
+		while (readl(IO_ADDRESS(DMA_DMA_LSO_BMC0_INTERRUPT)) == 0) ;
+
+		/* Clear INT */
+		writel(1, IO_ADDRESS(DMA_DMA_LSO_BMC0_INTERRUPT));
+		writel(0, IO_ADDRESS(DMA_DMA_LSO_BMC0_START));
+
+		dma_unmap_single(&dummy, src_phy, BUFF_SIZE_FOR_TEST,
+				DMA_TO_DEVICE);
+		dma_unmap_single(&dummy, dst_phy, BUFF_SIZE_FOR_TEST,
+				DMA_FROM_DEVICE);
+
+		/* Compare source & destination */
+		ret_v = memcmp(psrc_buf[i], pdst_buf[i], BUFF_SIZE_FOR_TEST);
+		if (ret_v != 0)
+			pr_err("ACP[%d] test fail!!!\n", i);
+	}
+
+ out:
+	/* Stop BMC and INT */
+	writel(0, IO_ADDRESS(DMA_DMA_LSO_BMC0_START));
+	writel(0, IO_ADDRESS(DMA_DMA_LSO_BMC0_INTENABLE));
+
+	/* Free allocated buffer */
+	for (i = 0; i < BUFF_CNT_FOR_TEST; i++) {
+		if (psrc_buf[i] != NULL)
+			kfree(psrc_buf[i]);
+		if (pdst_buf[i] != NULL)
+			kfree(pdst_buf[i]);
+	}
+
+	if (ret_v != 0) {		/* Disable ACP if test fail */
+		writel(0, IO_ADDRESS(GLOBAL_ARM_CONFIG_D));
+		acp_enabled = 0;
+	} else {
+		acp_enabled = 1;
+	}
+
+	pr_info("ACP %sabled\n", ret_v == 0 ? "En" : "Dis");
+
+	return ret_v;
+}
+#endif
+#endif /* CONFIG_ARCH_GOLDENGATE */

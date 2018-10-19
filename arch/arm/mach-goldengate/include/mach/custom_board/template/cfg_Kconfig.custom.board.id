@@ -1,0 +1,4 @@
+config CORTINA_CUSTOM_BOARD_ID_TEMPLATE
+       bool "Default Custom Board Template"
+       help
+         Patch custom_board/Kconfig to add more types and change the default selection as needed.

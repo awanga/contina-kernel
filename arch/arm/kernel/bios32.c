@@ -18,6 +18,12 @@
 
 static int debug_pci;
 
+#ifdef CONFIG_ARCH_GOLDENGATE
+#ifdef CONFIG_CS752X_PROC
+extern u32 cs_rt3593_dev_num;
+extern struct pci_dev *cs_rt3593_dev[];
+#endif
+#endif /* CONFIG_ARCH_GOLDENGATE */
 /*
  * We can't use pci_get_device() here since we are
  * called from interrupt context.
@@ -267,6 +273,17 @@ static void pci_fixup_it8152(struct pci_dev *dev)
 	}
 }
 DECLARE_PCI_FIXUP_HEADER(PCI_VENDOR_ID_ITE, PCI_DEVICE_ID_ITE_8152, pci_fixup_it8152);
+
+#ifdef CONFIG_ARCH_GOLDENGATE
+static void pci_fixup_ra3593(struct pci_dev *dev)
+{
+#ifdef CONFIG_CS752X_PROC
+	cs_rt3593_dev[cs_rt3593_dev_num] = dev;
+	cs_rt3593_dev_num++;
+#endif
+}
+DECLARE_PCI_FIXUP_HEADER(0x1814, 0x3593, pci_fixup_ra3593);
+#endif /* CONFIG_ARCH_GOLDENGATE */
 
 /*
  * If the bus contains any of these devices, then we must not turn on

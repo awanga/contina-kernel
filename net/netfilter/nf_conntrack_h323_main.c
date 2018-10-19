@@ -34,6 +34,9 @@
 #include <net/netfilter/nf_conntrack_zones.h>
 #include <linux/netfilter/nf_conntrack_h323.h>
 
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+#include <mach/cs_kernel_hook_api.h>
+#endif
 /* Parameters */
 static unsigned int default_rrq_ttl __read_mostly = 300;
 module_param(default_rrq_ttl, uint, 0600);
@@ -325,6 +328,17 @@ static int expect_rtp_rtcp(struct sk_buff *skb, struct nf_conn *ct,
 	nf_ct_expect_put(rtp_exp);
 	nf_ct_expect_put(rtcp_exp);
 
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+	if (ret == 0) {
+		/* RTP */
+		if (cs_kernel_hook_ops.kho_bypass_tcp_portlist_add != NULL)
+			cs_kernel_hook_ops.kho_bypass_udp_portlist_add(0, ntohs(rtp_port), CS_BYPASS_CNT_VALID);
+
+		/* RTCP */
+		if (cs_kernel_hook_ops.kho_bypass_tcp_portlist_add != NULL)
+			cs_kernel_hook_ops.kho_bypass_udp_portlist_add(0, ntohs(rtcp_port), CS_BYPASS_CNT_VALID);
+	}
+#endif
 	return ret;
 }
 
@@ -587,6 +601,24 @@ static int h245_help(struct sk_buff *skb, unsigned int protoff,
 	int datalen;
 	int dataoff;
 	int ret;
+
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+	struct iphdr *iph;
+	struct tcphdr *th;
+	struct tcphdr _tcph;
+
+	iph = ip_hdr(skb);
+	th = skb_header_pointer(skb, protoff, sizeof(_tcph), &_tcph);
+	/* H.245 Logical Channel */
+	if (cs_kernel_hook_ops.kho_bypass_tcp_portlist_add != NULL) {
+		cs_kernel_hook_ops.kho_bypass_tcp_portlist_add(0, ntohs(th->source), CS_BYPASS_CNT_INVALID);
+		cs_kernel_hook_ops.kho_bypass_tcp_portlist_add(0, ntohs(th->dest), CS_BYPASS_CNT_INVALID);
+	}
+
+	/* No idea why I have to delete opposite direction, but it works! */
+	if (cs_kernel_hook_ops.kho_nat_entry_session_delete != NULL)
+		cs_kernel_hook_ops.kho_nat_entry_session_delete(0, SOL_TCP, iph->daddr, iph->saddr, th->dest, th->source);
+#endif
 
 	/* Until there's been traffic both ways, don't look in packets. */
 	if (ctinfo != IP_CT_ESTABLISHED && ctinfo != IP_CT_ESTABLISHED_REPLY)
@@ -1829,6 +1861,15 @@ static void __exit nf_conntrack_h323_fini(void)
 	nf_conntrack_helper_unregister(&nf_conntrack_helper_h245);
 	kfree(h323_buffer);
 	pr_debug("nf_ct_h323: fini\n");
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+	/* Q.931 TCP */
+	if (cs_kernel_hook_ops.kho_bypass_tcp_portlist_delete != NULL)
+		cs_kernel_hook_ops.kho_bypass_tcp_portlist_delete(0, Q931_PORT, CS_BYPASS_CNT_VALID);
+
+	/* RAS UDP */
+	if (cs_kernel_hook_ops.kho_bypass_udp_portlist_delete != NULL)
+		cs_kernel_hook_ops.kho_bypass_udp_portlist_delete(0, RAS_PORT, CS_BYPASS_CNT_VALID);
+#endif
 }
 
 /****************************************************************************/
@@ -1855,6 +1896,17 @@ static int __init nf_conntrack_h323_init(void)
 	if (ret < 0)
 		goto err5;
 	pr_debug("nf_ct_h323: init success\n");
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+	/* TODO: H.245 */
+
+	/* Q.931 TCP */
+	if (cs_kernel_hook_ops.kho_bypass_tcp_portlist_add != NULL)
+		cs_kernel_hook_ops.kho_bypass_tcp_portlist_add(0, Q931_PORT, CS_BYPASS_CNT_VALID);
+
+	/* RAS UDP */
+	if (cs_kernel_hook_ops.kho_bypass_udp_portlist_add != NULL)
+		cs_kernel_hook_ops.kho_bypass_udp_portlist_add(0, RAS_PORT, CS_BYPASS_CNT_VALID);
+#endif
 	return 0;
 
 err5:

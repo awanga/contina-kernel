@@ -28,6 +28,10 @@
 
 #include "nf_internals.h"
 
+#ifdef CONFIG_CS752X_ACCEL_KERNEL
+extern void cs_hw_nf_drop_handler(struct sk_buff *skb);
+#endif
+
 static DEFINE_MUTEX(afinfo_mutex);
 
 const struct nf_afinfo __rcu *nf_afinfo[NFPROTO_NUMPROTO] __read_mostly;
@@ -356,6 +360,9 @@ next_hook:
 	if (verdict == NF_ACCEPT || verdict == NF_STOP) {
 		ret = 1;
 	} else if ((verdict & NF_VERDICT_MASK) == NF_DROP) {
+#ifdef CONFIG_CS752X_ACCEL_KERNEL
+		cs_hw_nf_drop_handler(skb);
+#endif
 		kfree_skb(skb);
 		ret = NF_DROP_GETERR(verdict);
 		if (ret == 0)

@@ -26,7 +26,13 @@
 #define MRT_TABLE	(MRT_BASE+9)	/* Specify mroute table ID		*/
 #define MRT_ADD_MFC_PROXY	(MRT_BASE+10)	/* Add a (*,*|G) mfc entry	*/
 #define MRT_DEL_MFC_PROXY	(MRT_BASE+11)	/* Del a (*,*|G) mfc entry	*/
+#ifdef CONFIG_ARCH_GOLDENGATE
+#define CS_L3_ENTRY_PORT_ADD	(MRT_BASE+12)	/* Add a multicast entry to G2 HW	*/
+#define CS_L3_ENTRY_PORT_DEL	(MRT_BASE+13)	/* Delete a multicast entry from G2 HW	*/
+#define MRT_MAX		(MRT_BASE+13)
+#else
 #define MRT_MAX		(MRT_BASE+11)
+#endif /* CONFIG_ARCH_GOLDENGATE */
 
 #define SIOCGETVIFCNT	SIOCPROTOPRIVATE	/* IP protocol privates */
 #define SIOCGETSGCNT	(SIOCPROTOPRIVATE+1)

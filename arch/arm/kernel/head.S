@@ -291,6 +291,15 @@ __create_page_tables:
 						@ for 64-bit descriptors
 #endif
 
+#ifdef CONFIG_ARCH_GOLDENGATE
+	/*
+	 * Then map 0xF0000000(1MB) for HW register.
+	 */
+	add	r0, r4, #0xF0000000 >> 18
+	orr	r6, r7, #0xf0000000
+	str	r6, [r0]
+#endif
+
 #ifdef CONFIG_DEBUG_LL
 #if !defined(CONFIG_DEBUG_ICEDCC) && !defined(CONFIG_DEBUG_SEMIHOSTING)
 	/*

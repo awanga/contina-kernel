@@ -1,3 +1,18 @@
+choice BINFMT_FLOAT_ABI
+	prompt "Float ABI"
+	depends on ARM
+	default BINFMT_FLOAT_SOFT
+
+config BINFMT_FLOAT_ABI_SOFT
+	bool "soft"
+
+config BINFMT_FLOAT_ABI_SOFTFP
+	bool "softfp"
+
+config BINFMT_FLOAT_ABI_HARD
+	bool "hard"
+endchoice
+
 config BINFMT_ELF
 	bool "Kernel support for ELF binaries"
 	depends on MMU && (BROKEN || !FRV)

@@ -1,0 +1,37 @@
+config SND_CS75XX_SOC
+	tristate "SoC Audio for the Cortina Systems CS75XX chip"
+	depends on ARCH_GOLDENGATE
+	help
+	  Say Y or M if you want to add support for codecs attached to
+	  the DAVINCI AC97 or I2S interface. You will also need
+	  to select the audio interfaces to support below.
+  
+config SND_CS75XX_SOC_EVM
+	tristate "SoC Audio support for CS75XX EVM"
+	depends on ARCH_GOLDENGATE && SND_CS75XX_SOC
+	help
+	  Say Y if you want to add support for SoC audio on Cortina Systems
+	  CS75XX EVM platforms.
+
+choice
+	depends on SND_CS75XX_SOC_EVM
+	prompt "Codec Select"
+	default SND_CS75XX_SOC_EVM_SPDIF
+	help
+	  Select codec on EVM!
+
+config SND_CS75XX_SOC_EVM_SPDIF
+	tristate "SPDIF"
+	depends on ARCH_GOLDENGATE
+	select SND_SOC_SPDIF
+	help
+	  SPDIF output
+
+config SND_CS75XX_SOC_EVM_DAE4P
+	tristate "DAE4P"
+	depends on ARCH_GOLDENGATE
+	select SND_SOC_DAE4P
+	help
+	  DAE4P with I2S output
+
+endchoice

@@ -1,0 +1,172 @@
+menu "Cortina-System platform type"
+	depends on ARCH_GOLDENGATE
+
+config MACH_CORTINA_G2
+	bool "Support Cortina-System G2 platform"
+	select ARM_GIC
+	select CPU_V7
+	select NEED_MACH_IO_H
+	select HAVE_PWM
+	help
+	  Include support for Cortex-A9 CPU on Cortina-Systems Baseboard.
+
+choice
+	prompt "G2 Platform Type"
+	default CORTINA_CUSTOM_BOARD
+	help
+	  Pick the G2 platform to build
+
+config CORTINA_CUSTOM_BOARD
+	bool "G2 SoC Based Custom Board"
+	select NEED_MACH_IO_H
+	help
+	  Support for Custom Board Designs.
+
+config CORTINA_FPGA
+       bool "FPGA Verification Board"
+       help
+         Support for the Golden-Gate FPGA board.
+
+config CORTINA_ENGINEERING
+       bool "Engineering Board(CS754x)"
+       select NEED_MACH_IO_H
+       help
+         Support for the Golden-Gate engineering board.
+
+config CORTINA_ENGINEERING_S
+       bool "Engineering Board Small package(CS752x)"
+       select NEED_MACH_IO_H
+       help
+         Support for the Golden-Gate engineering board small package(CS7422).
+
+
+config CORTINA_REFERENCE
+       bool "Reference Board(CS754x)"
+       select NEED_MACH_IO_H
+       help
+         Support for the Golden-Gate reference board.
+
+config CORTINA_REFERENCE_B
+       bool "Reference Board Ver.B(CS754x)"
+       select NEED_MACH_IO_H
+       help
+         Support for the Golden-Gate reference board version B.
+
+
+config CORTINA_REFERENCE_S
+       bool "Reference Board Small package(CS752x)"
+       select NEED_MACH_IO_H
+       help
+         Support for the Golden-Gate reference small package(CS7522).
+
+config CORTINA_REFERENCE_Q
+       bool "Reference Board package(CS754x) for Q "
+       select NEED_MACH_IO_H
+       help
+         Support for the Golden-Gate reference package(CS7542).
+
+config CORTINA_PON
+       bool "PON Board package(CS754x)"
+       select NEED_MACH_IO_H
+       help
+         Support for the Golden-Gate (CS7542) with PON.
+
+config CORTINA_BHR
+       bool "BHR Board package(CS754x)"
+       select NEED_MACH_IO_H
+       help
+         Support for the Golden-Gate (CS7542) with BHR.
+
+config CORTINA_WAN
+       bool "Wan Board (CS754x)"
+       select NEED_MACH_IO_H
+       help
+         Support for the Golden-Gate wan board .
+
+endchoice
+
+config ARCH_SUPPORTS_BIG_ENDIAN
+        bool
+        default y
+
+config ACP
+        bool "Support ACP(Accelerator Coherency Port)"
+        depends on MACH_CORTINA_G2 && !CORTINA_FPGA
+        help
+          Support for the Golden-Gate ASIC. The Accelerator Coherency Port (ACP) is a feature
+          of Cortex-A9, which provides an AXI slave port that can be connected to a DMA engine,
+          providing the DMA access to the SCU of Cortex-A9. Addresses on the ACP port are physical
+          addresses which can be snooped by the SCU to provide full I/O coherency.
+
+config PLATFORM_APB_CLK
+        int "Default APB clock speed(MHZ)"
+        default "100"
+        depends on MACH_CORTINA_G2 && !CORTINA_FPGA
+        help
+          There are three different APB clock for different HW strap pin.
+          100 for CPU clock 400, 600, 700, 800 and 900 MHz(Strap 0~4)
+          150 for CPU clock 750 MHz(Strap 5)
+          170 for CPU clock 850 MHz(Strap 6)
+
+config CS75XX_SSP
+        bool "Support SSP(Synchronous Serial Port)"
+        depends on MACH_CORTINA_G2
+        help
+          SSP can send PCM voice data for SLIC or I2C audio data to DAC.
+
+menuconfig CORTINA_G2_PCIE
+	bool "Support Cortina-System G2 PCIe "
+	select PCI
+	select ARCH_SUPPORTS_MSI
+	select PCI_SYSCALL
+	select PCI_MSI
+	select PCI_LEGACY
+  help
+	  Include support PCIe for Cortex-A9 CPU on Cortina-Systems Baseboard.
+
+if CORTINA_G2_PCIE
+config PCIE_EXTERNAL_CLOCK
+        bool "Use external clock for PCIe"
+        depends on CORTINA_G2_PCIE=y
+        default y 
+        help
+          Use external clock or internal clock for PCIe.
+endif
+
+config CORTINA_G2_USB_HOST
+	bool "Support Cortina-System G2 USB Host driver"
+	select USB_ARCH_HAS_EHCI
+	select USB_ARCH_HAS_OHCI
+	help
+	  Include support USB host for Cortex-A9 CPU on Cortina-Systems Baseboard.
+
+config CORTINA_DISABLE_USB_PHY0_CLOCK
+	bool "Disable USB PHY0 clock, when USB suspend/resume"
+	help
+	  Enable/Disable USB PHY0 clock, when USB suspend/resume.
+
+config CORTINA_GKCI
+	bool "Enable Cortina-specific Generic Kernel Contaminations"
+	default y
+	help
+	  Enable/Disable Cortina-specific GKCIs previously unmarked.
+
+config CORTINA_G2_GLOBAL_TIMER
+	bool "Enable Cortina g2 global timer."
+	default y
+	help
+	  Enable/Disable Cortina g2 global timer.
+
+endmenu
+
+config CS752X_PROC
+    bool "Cortina CS752X PROC debugging support"
+	default y
+    depends on PRINTK && PROC_FS
+    help
+      Allow users to control CS752X debug flags and other variables 
+      from proc filesystems.
+      They are allocated in /proc/drivers/cs752x/*.
+
+# Custom Board SDK Menu
+source "arch/arm/mach-goldengate/include/mach/custom_board/Kconfig"

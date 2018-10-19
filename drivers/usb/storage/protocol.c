@@ -54,6 +54,10 @@
 #include "scsiglue.h"
 #include "transport.h"
 
+#ifdef CONFIG_ARCH_GOLDENGATE
+#include <mach/gpio_alloc.h>
+#endif /* CONFIG_ARCH_GOLDENGATE */
+
 /***********************************************************************
  * Protocol routines
  ***********************************************************************/
@@ -117,11 +121,63 @@ void usb_stor_ufi_command(struct scsi_cmnd *srb, struct us_data *us)
 	usb_stor_invoke_transport(srb, us);
 }
 
+#if defined(GPIO_USB_STORAGE_LED_0) || defined(GPIO_USB_STORAGE_LED_1)
+extern spinlock_t usbled_lock;
+extern unsigned long usbled_flags;
+
+extern int usbled_id[2];
+extern int usbled_start[2];
+extern int usbled_status[2];
+extern int usbled_count[2];
+extern int usbled_idle_count[2];
+#endif
+
 void usb_stor_transparent_scsi_command(struct scsi_cmnd *srb,
 				       struct us_data *us)
 {
 	/* send the command to the transport layer */
 	usb_stor_invoke_transport(srb, us);
+
+#if defined(GPIO_USB_STORAGE_LED_0) || defined(GPIO_USB_STORAGE_LED_1)
+{
+	int usb_id;
+
+	usb_id = -1;
+
+#ifdef GPIO_USB_STORAGE_LED_0
+	if (!strncmp(us->pusb_dev->devpath, "1.", strlen("1.")) ||
+	    (!strncmp(us->pusb_dev->devpath, "1", strlen("1")) && (us->pusb_dev->portnum == 1))) {
+		usb_id = 0;
+	}
+#endif
+
+#ifdef GPIO_USB_STORAGE_LED_1
+	if (!strncmp(us->pusb_dev->devpath, "2.", strlen("2.")) ||
+	    (!strncmp(us->pusb_dev->devpath, "2", strlen("2")) && (us->pusb_dev->portnum == 2))) {
+		usb_id = 1;
+	}
+#endif
+
+	if (usb_id != -1) {
+		spin_lock(&usbled_lock);
+		/*printk("%s:%d,%d,%d\n", __FUNCTION__, srb->cmd_len, usbled_count[usb_id], srb->transfersize);*/
+		if (usbled_start[usb_id]) {
+			usbled_count[usb_id] += srb->transfersize;
+			usbled_idle_count[usb_id]++;
+
+			// toggle detect
+			if (usbled_count[usb_id] > 4*1024) {
+				usbled_status[usb_id] ^= 1;
+				gpio_set_value(usbled_id[usb_id], usbled_status[usb_id]);
+
+				usbled_count[usb_id] = 0;
+			}
+		}
+
+		spin_unlock(&usbled_lock);
+	}
+}
+#endif
 }
 EXPORT_SYMBOL_GPL(usb_stor_transparent_scsi_command);
 

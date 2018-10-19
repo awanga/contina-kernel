@@ -392,6 +392,10 @@ static void gpio_keys_gpio_work_func(struct work_struct *work)
 static irqreturn_t gpio_keys_gpio_isr(int irq, void *dev_id)
 {
 	struct gpio_button_data *bdata = dev_id;
+#ifdef CONFIG_ARCH_GOLDENGATE
+	const struct gpio_keys_button *button = bdata->button;
+	unsigned long irqflags;
+#endif
 
 	BUG_ON(irq != bdata->irq);
 
@@ -401,6 +405,12 @@ static irqreturn_t gpio_keys_gpio_isr(int irq, void *dev_id)
 	mod_delayed_work(system_wq,
 			 &bdata->work,
 			 msecs_to_jiffies(bdata->software_debounce));
+
+#ifdef CONFIG_ARCH_GOLDENGATE
+	/* toogle irqflag */
+	irqflags = gpio_get_value(button->gpio) ? IRQF_TRIGGER_FALLING : IRQF_TRIGGER_RISING;
+	irq_set_irq_type(bdata->irq, irqflags);
+#endif
 
 	return IRQ_HANDLED;
 }
@@ -529,7 +539,12 @@ static int gpio_keys_setup_key(struct platform_device *pdev,
 		INIT_DELAYED_WORK(&bdata->work, gpio_keys_gpio_work_func);
 
 		isr = gpio_keys_gpio_isr;
+#ifdef CONFIG_ARCH_GOLDENGATE
+		/* GPIO not support both edge interrupt */
+		irqflags = button->active_low ? IRQF_TRIGGER_FALLING : IRQF_TRIGGER_RISING;
+#else
 		irqflags = IRQF_TRIGGER_RISING | IRQF_TRIGGER_FALLING;
+#endif
 
 	} else {
 		if (!button->irq) {

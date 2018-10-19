@@ -270,4 +270,9 @@
 /* MPS2 UART */
 #define PORT_MPS2UART	116
 
+#ifdef CONFIG_ARCH_GOLDENGATE
+/* Cortinal GoldenGate UART */
+#define PORT_CORTINA	117
+#endif /* CONFIG_ARCH_GOLDENGATE */
+
 #endif /* _UAPILINUX_SERIAL_CORE_H */

@@ -13,6 +13,10 @@
 #include <net/icmp.h>
 #include <net/protocol.h>
 
+#ifdef CONFIG_CS752X_HW_ACCELERATION_IPSEC
+extern int cs_ipsec_handler(struct sk_buff *skb, struct xfrm_state *x, u8 ip_ver, u8 dir);
+#endif
+
 struct ah_skb_cb {
 	struct xfrm_skb_cb xfrm;
 	void *tmp;
@@ -160,6 +164,12 @@ static int ah_output(struct xfrm_state *x, struct sk_buff *skb)
 	int sglists = 0;
 	struct scatterlist *seqhisg;
 
+#ifdef CONFIG_CS752X_HW_ACCELERATION_IPSEC
+	/* Cortina Acceleration
+	 * Inspect whether the AH process can be accelerated or not. */
+	if (cs_ipsec_handler(skb, x, 0, 1) == 1)
+		return 1;
+#endif
 	ahp = x->data;
 	ahash = ahp->ahash;
 
@@ -319,6 +329,12 @@ static int ah_input(struct xfrm_state *x, struct sk_buff *skb)
 	int sglists = 0;
 	struct scatterlist *seqhisg;
 
+#ifdef CONFIG_CS752X_HW_ACCELERATION_IPSEC
+	/* Cortina Acceleration
+	 * Inspect whether the AH process can be accelerated or not. */
+	if (cs_ipsec_handler(skb, x, 0, 0) == 1)
+		return -EBUSY;
+#endif
 	if (!pskb_may_pull(skb, sizeof(*ah)))
 		goto out;
 

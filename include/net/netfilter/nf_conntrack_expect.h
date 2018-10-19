@@ -8,6 +8,10 @@
 #include <net/netfilter/nf_conntrack.h>
 #include <net/netfilter/nf_conntrack_zones.h>
 
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+#include <mach/cs_kernel_hook_api.h>
+#endif
+
 extern unsigned int nf_ct_expect_hsize;
 extern unsigned int nf_ct_expect_max;
 extern struct hlist_head *nf_ct_expect_hash;
@@ -98,6 +102,15 @@ void nf_ct_unlink_expect_report(struct nf_conntrack_expect *exp,
 static inline void nf_ct_unlink_expect(struct nf_conntrack_expect *exp)
 {
 	nf_ct_unlink_expect_report(exp, 0, 0);
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+	if (exp->tuple.dst.protonum == SOL_TCP) {
+		if (cs_kernel_hook_ops.kho_bypass_tcp_portlist_delete != NULL)
+			cs_kernel_hook_ops.kho_bypass_tcp_portlist_delete(0, ntohs(exp->tuple.dst.u.all), CS_BYPASS_CNT_VALID);
+	} else if (exp->tuple.dst.protonum == SOL_UDP) {
+		if (cs_kernel_hook_ops.kho_bypass_udp_portlist_delete != NULL)
+			cs_kernel_hook_ops.kho_bypass_udp_portlist_delete(0, ntohs(exp->tuple.dst.u.all), CS_BYPASS_CNT_VALID);
+	}
+#endif
 }
 
 void nf_ct_remove_expectations(struct nf_conn *ct);
@@ -115,6 +128,15 @@ int nf_ct_expect_related_report(struct nf_conntrack_expect *expect,
 				u32 portid, int report);
 static inline int nf_ct_expect_related(struct nf_conntrack_expect *expect)
 {
+#ifdef CONFIG_LYNXE_KERNEL_HOOK
+	if (expect->tuple.dst.protonum == SOL_TCP) {
+		if (cs_kernel_hook_ops.kho_bypass_tcp_portlist_add != NULL)
+			cs_kernel_hook_ops.kho_bypass_tcp_portlist_add(0, ntohs(expect->tuple.dst.u.all), CS_BYPASS_CNT_VALID);
+	} else if (expect->tuple.dst.protonum == SOL_UDP) {
+		if (cs_kernel_hook_ops.kho_bypass_udp_portlist_add != NULL)
+			cs_kernel_hook_ops.kho_bypass_udp_portlist_add(0, ntohs(expect->tuple.dst.u.all), CS_BYPASS_CNT_VALID);
+	}
+#endif
 	return nf_ct_expect_related_report(expect, 0, 0);
 }
 

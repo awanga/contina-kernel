@@ -22,6 +22,10 @@ MODULE_LICENSE("GPL");
 MODULE_ALIAS("ipt_string");
 MODULE_ALIAS("ip6t_string");
 
+#ifdef CONFIG_CS752X_HW_ACCELERATION
+extern void cs_core_set_sw_only(struct sk_buff *skb);
+#endif
+
 static bool
 string_mt(const struct sk_buff *skb, struct xt_action_param *par)
 {
@@ -29,6 +33,11 @@ string_mt(const struct sk_buff *skb, struct xt_action_param *par)
 	bool invert;
 
 	invert = conf->u.v1.flags & XT_STRING_FLAG_INVERT;
+	
+#ifdef CONFIG_CS752X_HW_ACCELERATION	
+	/* this module will parse every packet content so need to ignore hw acceleration */
+	cs_core_set_sw_only(skb);
+#endif
 
 	return (skb_find_text((struct sk_buff *)skb, conf->from_offset,
 			     conf->to_offset, conf->config)

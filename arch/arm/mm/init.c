@@ -39,6 +39,9 @@
 
 #include "mm.h"
 
+extern int ram_panic_pages;
+extern void *ram_panic_mem;
+
 #ifdef CONFIG_CPU_CP15_MMU
 unsigned long __init __clear_cr(unsigned long mask)
 {
@@ -262,6 +265,19 @@ void __init arm_memblock_init(const struct machine_desc *mdesc)
 		initrd_end = initrd_start + phys_initrd_size;
 	}
 #endif
+	if (ram_panic_pages) {
+		unsigned ram_panic_size = ram_panic_pages << PAGE_SHIFT;
+		struct memblock_region *reg = &memblock.memory.regions[0];
+		unsigned long phys = reg->base + reg->size - ram_panic_size;
+		if (memblock_is_region_reserved(phys, ram_panic_size)) {
+			printk("ram panic: 0x%lx+0x%x overlaps in-use memory region\n", phys, ram_panic_size);
+		} else {
+			memblock_reserve(phys, ram_panic_size);
+			/* get virtual addr */
+			ram_panic_mem = (void *) __phys_to_virt(phys);
+			printk("ram panic: phys 0x%lx virt %p\n", phys, ram_panic_mem);
+		}
+	}
 
 	arm_mm_memblock_reserve();
 

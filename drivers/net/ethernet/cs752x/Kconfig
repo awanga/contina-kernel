@@ -1,0 +1,566 @@
+config CS752X
+	bool "Cortina CS752X Gigabit Ethernet support"
+	depends on ARCH_GOLDENGATE
+	---help---
+	  This driver supports Cortina CS752x gigabit ethernet family of
+	  adapters.  For more information on how to identify your adapter, go
+	  to the Adapter & Driver ID Guide at:
+
+	  <http://www.cortina-systems.com/>
+
+if CS752X
+
+config CS752X_HW_INTERNAL_BUFFERS
+	tristate "Cortina CS752X Hardware Internal Buffers - 256kB"
+	default y
+	depends on CS752X
+	---help---
+	  When set gigabit ethernet ports and internal recirculation ports will
+	  use onchip memory.  This removes DDR bandwidth consumption for packets
+	  destined for those ports or sourced from them.
+	  For more information on how to identify your adapter, go
+	  to the Adapter & Driver ID Guide at:
+
+	  <http://www.cortina-systems.com/>
+
+
+config CS752X_HW_INTERNAL_BUFFERS_HALF_SIZE
+	tristate "Cortina CS752X HW HALF SIZE Internal Buffers 128kB instead"
+	default n
+	depends on CS752X_HW_INTERNAL_BUFFERS
+	---help---
+	  When set the lower half of the memory will be used for the queue manager
+	  and the upper half of memory will be available to CPUs or whatever
+	  purpose desired. This means that the buffer depth also for the QM
+	  will be 128kB instead of the larger 256kB and may suffer from
+	  dropped packets on jumbo sized frames when all ports are active.
+
+	  For more information on how to identify your adapter, go
+	  to the Adapter & Driver ID Guide at:
+
+	  <http://www.cortina-systems.com/>
+
+config CS752X_HW_INTERNAL_BUFFERS_192_SIZE
+	tristate "Cortina CS752X HW HALF SIZE Internal Buffers 192kB instead"
+	default n
+	depends on CS752X_HW_INTERNAL_BUFFERS
+	---help---
+	  When set 192kB of Packet buffer memory will be used for packet
+	  storage.  The remaining 64kB is available for general purpose CPU
+	  or Recirculation Engine processing.
+
+	  For more information on how to identify your adapter, go
+	  to the Adapter & Driver ID Guide at:
+
+	  <http://www.cortina-systems.com/>
+
+config CS752X_HW_INTERNAL_BUFFERS_RECIRCULATION
+	tristate "Cortina CS752X HW Recirculation Internal Buffers"
+	default n
+	depends on CS752X_HW_INTERNAL_BUFFERS
+	---help---
+	  Will use onchip shared internal buffers for recirculation engine
+	  instead of the external.  The advantage is a saving of B/W for
+	  traffic that is destined for the recirculation engine.  The
+	  disadvantage is that the queue depth is very shallow so if the
+	  recirculation engine task is complex and takes time packets may
+	  drop.
+
+	  For more information on how to identify your adapter, go
+	  to the Adapter & Driver ID Guide at:
+
+	  <http://www.cortina-systems.com/>
+
+config CS752X_NR_QMBANK
+	int "Number of DRAM Banks for QM(1-7)"
+	range 1 7
+	default "1"
+	---help---
+	  Decide how many DRAM bank be allocated for HW QM. This option works
+	  only if CS752X_HW_INTERNAL_BUFFERS be disabled. i.e. This is exclusive
+	  with CS752X_HW_INTERNAL_BUFFERS. If CS752X_HW_INTERNAL_BUFFERS is enabled,
+	  the all DRAM bank were allocated for Linux kernel no matter the. If
+	  CS752X_HW_INTERNAL_BUFFERS is disabled, number of DRAM bank will be reserved
+	  for QM module.
+
+choice
+	prompt "Connect which G2 MAC to external switch"
+	default CS75XX_GMAC1_TO_EXT_SWITCH
+	depends on CS752X
+
+config CS75XX_GMAC0_TO_EXT_SWITCH
+	bool "GMAC0"
+
+config CS75XX_GMAC1_TO_EXT_SWITCH
+	bool "GMAC1"
+
+config CS75XX_GMAC2_TO_EXT_SWITCH
+	bool "GMAC2"
+
+config CS75XX_NONE_TO_EXT_SWITCH
+	bool "None"
+endchoice
+
+choice
+	prompt "GMAC0 Interface"
+	default CS75XX_GMAC0_RGMII_1000
+	depends on CS752X
+
+config CS75XX_GMAC0_MII
+	bool "MII mode"
+
+config CS75XX_GMAC0_RGMII_1000
+	bool "RGMII 1000 Mbps mode"
+
+config CS75XX_GMAC0_RGMII_100
+	bool "RGMII 100 Mbps mode"
+
+config CS75XX_GMAC0_RMII
+	bool "RMII mode"
+endchoice
+
+config CS75XX_INT_CLK_SRC_RMII_GMAC0
+	bool "Internal clock source in RMII mode of GMAC0"
+	default n
+	depends on CS752X
+	---help---
+	Clock source for ports in RMII mode of operation.
+	In RMII mode, reference clock can be sourced from the MAC to PHY or
+	from external source. When enabled, clock is sourced from reference
+	clock and given out of chip. When disabled, clock is sourced from
+	external source and is input to chip.
+
+config CS75XX_PHY_ADDR_GMAC0
+	int "PHY address of GMAC0 (0-31)"
+	range 0 31
+	default "1"
+	depends on CS752X
+
+choice
+	prompt "GMAC1 Interface"
+	default CS75XX_GMAC1_RGMII_1000
+	depends on CS752X
+
+config CS75XX_GMAC1_MII
+	bool "MII mode"
+
+config CS75XX_GMAC1_RGMII_1000
+	bool "RGMII 1000 Mbps mode"
+
+config CS75XX_GMAC1_RGMII_100
+	bool "RGMII 100 Mbps mode"
+
+config CS75XX_GMAC1_RMII
+	bool "RMII mode"
+endchoice
+
+config CS75XX_INT_CLK_SRC_RMII_GMAC1
+	bool "Internal clock source in RMII mode of GMAC1"
+	default n
+	depends on CS752X
+	---help---
+	Clock source for ports in RMII mode of operation.
+	In RMII mode, reference clock can be sourced from the MAC to PHY or
+	from external source. When enabled, clock is sourced from reference
+	clock and given out of chip. When disabled, clock is sourced from
+	external source and is input to chip.
+
+config CS75XX_PHY_ADDR_GMAC1
+	int "PHY address of GMAC1 (0-31)"
+	range 0 31
+	default "0"
+	depends on CS752X
+
+choice
+	prompt "GMAC2 Interface"
+	default CS75XX_GMAC2_RGMII_1000
+	depends on CS752X
+
+config CS75XX_GMAC2_MII
+	bool "MII mode"
+
+config CS75XX_GMAC2_RGMII_1000
+	bool "RGMII 1000 Mbps mode"
+
+config CS75XX_GMAC2_RGMII_100
+	bool "RGMII 100 Mbps mode"
+
+config CS75XX_GMAC2_RMII
+	bool "RMII mode"
+endchoice
+
+config CS75XX_INT_CLK_SRC_RMII_GMAC2
+	bool "Internal clock source in RMII mode of GMAC2"
+	default n
+	depends on CS752X
+	---help---
+	Clock source for ports in RMII mode of operation.
+	In RMII mode, reference clock can be sourced from the MAC to PHY or
+	from external source. When enabled, clock is sourced from reference
+	clock and given out of chip. When disabled, clock is sourced from
+	external source and is input to chip.
+
+config CS75XX_PHY_ADDR_GMAC2
+	int "PHY address of GMAC2 (0-31)"
+	range 0 31
+	default "2"
+	depends on CS752X
+
+config CS752X_ACCEL_KERNEL
+	bool "Cortina CS752X Linux Packet Acceleration"
+	default n
+	depends on CS752X
+	---help---
+	  This driver supports Cortina CS752x chip family of kernel adapt modules
+	  for packet acceleration.  For more information on how to identify
+	  your adapter, go to the Adapter & Driver ID Guide at:
+
+	  <http://www.cortina-systems.com/>
+
+config CS752X_FASTNET
+	bool "Cortina CS752X FASTNET support"
+	default n
+	depends on CS752X && CS752X_ACCEL_KERNEL
+	---help---
+	  This driver supports Cortina CS752x chip family of fastnet and kernel
+	  adapters.  For more information on how to identify your adapter, go
+	  to the Adapter & Driver ID Guide at:
+
+	  <http://www.cortina-systems.com/>
+
+config CS752X_HW_ACCELERATION
+	bool "Cortina CS752X Hardware Acceleration support"
+	default n
+	depends on CS752X && CS752X_ACCEL_KERNEL
+	---help---
+	  This driver supports Cortina CS752x chip family of hardware acceleration
+	  adapters.  For more information on how to identify your adapter, go
+	  to the Adapter & Driver ID Guide at:
+
+	  <http://www.cortina-systems.com/>
+
+config CS752X_HW_ACCELERATION_IPSEC
+	tristate "Cortina CS752X Hardware IPsec Acceleration support"
+	default n
+	depends on CS752X && CS752X_HW_ACCELERATION
+	---help---
+	  This driver supports Cortina CS752x chip family of hardware acceleration
+	  adapters.  For more information on how to identify your adapter, go
+	  to the Adapter & Driver ID Guide at:
+
+	  <http://www.cortina-systems.com/>
+ 
+config CS752X_HW_ACCEL_ETHERIP
+        tristate "Cortina CS752X Hardware EtherIP Acceleration support"
+        default n
+        depends on CS752X_HW_ACCELERATION_IPSEC
+        ---help---
+          This driver supports Cortina CS752x chip family of hardware acceleration
+          adapters.  For more information on how to identify your adapter, go
+          to the Adapter & Driver ID Guide at:
+
+          <http://www.cortina-systems.com/>
+
+config CS75XX_WFO
+	bool "Cortina CS752X WFO support"
+	default n
+	depends on CS752X && CS752X_ACCEL_KERNEL
+	---help---
+	  This driver supports Cortina CS752x chip family of WFO.  For more information 
+	  on how to identify your adapter, go
+	  to the Adapter & Driver ID Guide at:
+
+	  <http://www.cortina-systems.com/>
+
+config CS75XX_WFO_RT3593
+	tristate "Cortina CS752X WFO RT3593 support"
+	default y
+	depends on CS752X && CS75XX_WFO
+	---help---
+	  This driver supports Cortina CS752x chip family of WFO RT3593.  For more information 
+	  on how to identify your adapter, go
+	  to the Adapter & Driver ID Guide at:
+
+	  <http://www.cortina-systems.com/>
+
+config CS75XX_DOUBLE_CHECK
+	bool "Cortina CS75XX Double Check Support"
+	default n
+	depends on CS752X_HW_ACCELERATION
+	---help---
+	  This function supports double check mechanism of CS75XX hardware
+	  acceleration.
+
+config CS75XX_HW_ACCEL_IPLIP
+	bool "Cortina CS75XX Hardware Acceleration for IPLIP encapsulation"
+	default n
+	depends on CS752X_HW_ACCELERATION
+	---help---
+	  This function supports IPv6 over PPP over L2TP over IPv4
+	  over PPPoE encapsulation by using G2 network engine and
+	  packet engine.
+
+config CS75XX_HW_ACCEL_PPTP
+	bool "Cortina CS75XX Hardware Acceleration for PPTP encapsulation"
+	default n
+	depends on CS752X_HW_ACCELERATION
+	---help---
+	  This function supports PPTP encapsulation by using G2 network engine and
+	  packet engine.
+
+config CS75XX_HW_ACCEL_L2TP_IPSEC
+	bool "Cortina CS75XX Hardware Acceleration for L2TP over IPSec encapsulation"
+	default n
+	depends on CS752X_HW_ACCELERATION
+	---help---
+	  This function supports L2TP over IPSec encapsulation by using G2
+	  network engine and packet engine.
+
+config CS75XX_HW_ACCEL_L2TP_IPSEC_NATT
+	bool "Cortina CS75XX Hardware Acceleration for IPSec NAT-T and L2TP over IPSec NAT-T"
+	default n
+	depends on CS752X_HW_ACCELERATION && CS75XX_HW_ACCEL_L2TP_IPSEC
+	---help---
+	  This function supports IPSec NAT-T and L2TP over IPSec NAT-T encapsulation
+	  by using G2 network engine and packet engine.
+
+config CS75XX_HW_ACCEL_RTP_PROXY
+        bool "Cortina CS75XX Hardware Acceleration for RTP proxy"
+        default n
+        depends on CS752X_HW_ACCELERATION
+        ---help---
+          This function supports RTP proxy by using G2
+          network engine and packet engine.
+
+config CS75XX_HW_ACCEL_IP_TRANSLATE
+        bool "Cortina CS75XX Hardware Acceleration for IP Translate"
+        default n
+        depends on CS752X_HW_ACCELERATION
+        ---help---
+          This function supports IP Translate by using G2
+          network engine and packet engine.          
+config CS75XX_HW_ACCEL_WIRELESS
+	bool "Cortina CS75XX Hardware Acceleration for Wireless interface"
+	default y
+	depends on CS752X_HW_ACCELERATION
+	---help---
+	  This function supports wireless interface by using G2 network engine 
+	  
+config CS75XX_DATA_PLANE_MULTICAST
+	bool "Cortina CS75XX Multicast Data Plane support"
+	default y
+	depends on CS752X_HW_ACCELERATION
+	---help---
+	  Support Multicast Data Plane.
+	  When this option is enabled, all multicast HW accel entries are
+	  ontrolled by /proc/driver/cs752x/mcast/.
+
+config CS75XX_MTU_CHECK
+	bool "Cortina CS75XX MTU check"
+	default n
+	depends on CS752X_HW_ACCELERATION
+	---help---
+	  This function supports packet length range check for IPoE, PPPoE and IPLIP.
+
+config CS75XX_HW_ACCEL_IPSEC_PASS
+	bool "Cortina CS75XX Hardware Acceleration for L2 IPSec pass through"
+	default n
+	depends on CS752X_HW_ACCELERATION
+	---help---
+	  This function supports L2TP over IPSec pass through and IPSec pass
+	  through in bridge mode by using G2 network engine.
+
+config CS75XX_HW_ACCEL_L2TP_PASS
+	bool "Cortina CS75XX Hardware Acceleration for L2 L2TP pass through"
+	default n
+	depends on CS752X_HW_ACCELERATION
+	---help---
+	  This function supports L2TP pass through in bridge mode by using G2
+	  network engine.
+
+config CS75XX_HW_ACCEL_IPSEC_CTRL
+	bool "Control Plane of Cortina IPSec Acceleration"
+	default n
+	depends on CS75XX_HW_ACCEL_L2TP_IPSEC && !CS752X_HW_ACCELERATION_IPSEC
+	---help---
+	  This function supports control plane for Cortina IPSec data plane
+	  APIs.
+
+config CS75XX_HW_ACCEL_L2TP_CTRL
+	bool "Control Plane of Cortina L2TP Acceleration"
+	default n
+	depends on CS75XX_HW_ACCEL_L2TP_IPSEC
+	---help---
+	  This function supports control plane for Cortina L2TP data plane APIs.
+
+choice
+	prompt "Cortina CS75XX QoS Setting"
+	depends on CS752X_HW_ACCELERATION
+	default CS75XX_FLOW_BASED_QOS
+	help
+	  This option is setting G2 QoS to Flow-Based or Offset-Based.
+
+config CS75XX_FLOW_BASED_QOS
+	bool "Cortina CS75XX Flow-Based QoS"
+	help
+	  This enables the G2 QoS to Flow-Based.
+
+config CS75XX_OFFSET_BASED_QOS
+	bool "Cortina CS75XX Offset-Based QoS"
+	help
+	  This enables the G2 QoS to Offset-Based.
+
+endchoice
+
+config CS752X_VIRTUAL_NETWORK_INTERFACE
+	bool "Cortina CS752X Virtual Network Interface"
+	default n
+	depends on CS752X
+	---help---
+	  This driver supports Cortina CS752x chip family of built-in virtual
+	  network interfaces. For more information on how to identify your
+	  adapter, go to the Adapter & Driver ID Guide at:
+
+	  <http://www.cortina-systems.com/>
+
+choice
+	prompt "Attribute that Virtual Interfaces based on"
+	default CS752X_VIRTUAL_NI_CPUTAG
+	depends on CS752X && CS752X_VIRTUAL_NETWORK_INTERFACE
+
+config CS752X_VIRTUAL_NI_CPUTAG
+	bool "Realtek CPU TAG at the end of packet"
+	help
+	  This will create the virtual interfaces that based on the port_mask
+	  in Realtek CPU tag that is appended at the end of each packet.
+
+config CS752X_VIRTUAL_NI_DBLTAG
+	bool "SVLAN tag that is always at the outer VLAN tag"
+	help
+	  This will create the virtual interfaces that based on the VLAN ID
+	  of outer VLAN (SVLAN) header in each packet.
+
+endchoice
+
+config CS752X_VIRTUAL_ETH0
+	bool "Cortina CS752X Virtual Network Interface on eth0 (MAC#0)"
+	default n
+	depends on CS752X && CS752X_VIRTUAL_NETWORK_INTERFACE
+	---help---
+	  This driver supports Cortina CS752x chip family of built-in virtual
+	  network interfaces on eth0.
+
+config CS752X_NR_VIRTUAL_ETH0
+	int "Number of Virtual Interfaces created on eth0 (1-5)"
+	range 1 5
+	default "4"
+	depends on CS752X && CS752X_VIRTUAL_NETWORK_INTERFACE && \
+		CS752X_VIRTUAL_ETH0
+
+config CS752X_VID_START_ETH0
+	int "The starting VLAN ID for the virtual interfaces (1 - 255)"
+	range 1 255
+	default "100"
+	depends on CS752X && CS752X_VIRTUAL_NETWORK_INTERFACE && \
+		CS752X_VIRTUAL_ETH0 && CS752X_VIRTUAL_NI_DBLTAG
+
+config CS752X_VIRTUAL_ETH1
+	bool "Cortina CS752X Virtual Network Interface on eth1 (MAC#1)"
+	default n
+	depends on CS752X && CS752X_VIRTUAL_NETWORK_INTERFACE
+	---help---
+	  This driver supports Cortina CS752x chip family of built-in virtual
+	  network interfaces on eth1.
+
+config CS752X_NR_VIRTUAL_ETH1
+	int "Number of Virtual Interfaces created on eth1 (1-5)"
+	range 1 5
+	default "4"
+	depends on CS752X && CS752X_VIRTUAL_NETWORK_INTERFACE && \
+		CS752X_VIRTUAL_ETH1
+
+config CS752X_VID_START_ETH1
+	int "The starting VLAN ID for the virtual interfaces (1 - 255)"
+	range 1 255
+	default "100"
+	depends on CS752X && CS752X_VIRTUAL_NETWORK_INTERFACE && \
+		CS752X_VIRTUAL_ETH1 && CS752X_VIRTUAL_NI_DBLTAG
+
+config CS752X_VIRTUAL_ETH2
+	bool "Cortina CS752X Virtual Network Interface on eth2 (MAC#2)"
+	default n
+	depends on CS752X && CS752X_VIRTUAL_NETWORK_INTERFACE
+	---help---
+	  This driver supports Cortina CS752x chip family of built-in virtual
+	  network interfaces on eth2.
+
+config CS752X_NR_VIRTUAL_ETH2
+	int "Number of Virtual Interfaces created on eth2 (1-4)"
+	range 1 4
+	default "4"
+	depends on CS752X && CS752X_VIRTUAL_NETWORK_INTERFACE && \
+		CS752X_VIRTUAL_ETH2
+
+config CS752X_VID_START_ETH2
+	int "The starting VLAN ID for the virtual interfaces (1 - 255)"
+	range 1 255
+	default "100"
+	depends on CS752X && CS752X_VIRTUAL_NETWORK_INTERFACE && \
+		CS752X_VIRTUAL_ETH2 && CS752X_VIRTUAL_NI_DBLTAG
+
+config CS75XX_FE_TBL_MGMT_UT
+	tristate "Unit Test of FE Table Management support"
+	default n
+	depends on CS752X
+	---help---
+	  This module support to test table management funtions of
+	  forwarding engine. It covers basic test, boundary test, mixed
+	  operations, and combination of multiple tables.
+
+config VFS_FASTPATH
+	bool "Cortina VFS fastpath"
+	default n
+	depends on CS752X
+	---help---
+	  Allows large packets to be delivered to the TCP stack for VFS
+
+config SMB_TUNING
+	bool "Cortina SMB Tuning"
+	default n
+	depends on CS752X
+	---help---
+	  Samba read/write performance tuning
+
+config CS75XX_NI_EXPERIMENTAL_SW_CACHE_MANAGEMENT
+        bool "Cortina Ethernet SW Managed Cache (EXPERIMENTAL)"
+        default n
+        depends on CS752X
+        ---help---
+          This is an experiemental mode in which software
+          manually flushes and invalidates the cache instead of
+          using ACP HW coherency.
+
+config CS75XX_KTHREAD_RX
+        bool "User kthread to receive rx packets instead of NAPI"
+        default n
+        depends on CS752X
+        ---help---
+          It provides another way to receive rx packets.
+          If this option is set, the throught will be down
+
+config CS75XX_SMALL_SLAB
+	bool "Provide individual slab for small memory allocation"
+	default n
+        depends on CS752X
+	---help---
+	  This only occurs when the memory allocation is equal or smaller than 16 bytes.
+	  Enable this to reduce memory usage in Cortina NE.
+
+config CS75XX_NO_JUMBO_FRAMES
+	bool "Dont support jumbo frames, saving 50% of network buffer memory"
+	default n
+	depends on CS752X
+	---help---
+	  This will allocate network buffers from the 2k slab instead of the 4k slab.
+	  Enable this to reduce memory usage in Cortina NE.
+endif

@@ -107,6 +107,20 @@ struct tc_sizespec {
 	unsigned int	tsize;
 };
 
+#ifdef CONFIG_ARCH_GOLDENGATE
+struct tc_wredspec {
+	__u8 enbl;
+	__u8 min_pct_base;
+	__u8 max_pct_base;
+	__u8 min_pct_buffer;
+	__u8 max_pct_buffer;
+	__u8 drop_prob;
+	__u8 aqd_lp_filter_const;
+};
+
+#define TC_WREDTAB_SIZE	1024
+#endif /* CONFIG_ARCH_GOLDENGATE */
+
 enum {
 	TCA_STAB_UNSPEC,
 	TCA_STAB_BASE,

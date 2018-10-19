@@ -1339,7 +1339,12 @@ static int sil24_init_one(struct pci_dev *pdev, const struct pci_device_id *ent)
 	/* Set max read request size to 4096.  This slightly increases
 	 * write throughput for pci-e variants.
 	 */
+#ifdef CONFIG_CORTINA_GKCI
+	//debug_Aaron
+	pcie_set_readrq(pdev, 512);
+#else
 	pcie_set_readrq(pdev, 4096);
+#endif
 
 	sil24_init_controller(host);
 

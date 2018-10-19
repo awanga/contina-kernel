@@ -56,6 +56,10 @@
 #include <linux/netfilter/nfnetlink.h>
 #include <linux/netfilter/nfnetlink_conntrack.h>
 
+#ifdef CONFIG_CS752X_ACCEL_KERNEL
+extern void cs_hw_accel_forward_update_ct_timeout(struct nf_conn *ct);
+#endif
+
 MODULE_LICENSE("GPL");
 
 static char __initdata version[] = "0.93";
@@ -860,6 +864,10 @@ restart:
 			 * then dump everything. */
 			if (l3proto && nf_ct_l3num(ct) != l3proto)
 				continue;
+#ifdef CONFIG_CS752X_ACCEL_KERNEL
+			cs_hw_accel_forward_update_ct_timeout(ct);
+#endif
+
 			if (cb->args[1]) {
 				if (ct != last)
 					continue;
@@ -1232,6 +1240,9 @@ static int ctnetlink_get_conntrack(struct net *net, struct sock *ctnl,
 		return -ENOENT;
 
 	ct = nf_ct_tuplehash_to_ctrack(h);
+#ifdef CONFIG_CS752X_ACCEL_KERNEL
+	cs_hw_accel_forward_update_ct_timeout(ct);
+#endif
 
 	err = -ENOMEM;
 	skb2 = nlmsg_new(NLMSG_DEFAULT_SIZE, GFP_KERNEL);

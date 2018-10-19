@@ -1890,7 +1890,7 @@ config HAVE_GENERIC_DMA_COHERENT
 config SLABINFO
 	bool
 	depends on PROC_FS
-	depends on SLAB || SLUB_DEBUG
+	depends on SLAB || (SLUB && SYSFS)
 	default y
 
 config RT_MUTEXES
@@ -1975,6 +1975,14 @@ config MODULE_SIG
 	bool "Module signature verification"
 	depends on MODULES
 	select SYSTEM_DATA_VERIFICATION
+	select KEYS
+	select CRYPTO
+	select ASYMMETRIC_KEY_TYPE
+	select ASYMMETRIC_PUBLIC_KEY_SUBTYPE
+	select PUBLIC_KEY_ALGO_RSA
+	select ASN1
+	select OID_REGISTRY
+	select X509_CERTIFICATE_PARSER
 	help
 	  Check modules for valid signatures upon load: the signature
 	  is simply appended to the module. For more information see

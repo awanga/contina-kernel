@@ -24,6 +24,36 @@ config DEVKMEM
 	  kind of kernel debugging operations.
 	  When in doubt, say "N".
 
+config CS75XX_PWC
+        bool "Cortina CS75XX power supply"
+        depends on ARCH_GOLDENGATE
+        help
+          Say Y here to enable support for the power control provided by the
+          Cortina CS75XX.
+
+config CS75XX_REG_RW
+        bool "Cortina CS75XX Read/Write Register "
+        depends on ARCH_GOLDENGATE
+        help
+	      Support to read/write register in command line for
+	      Cortex-A9 CPU on Cortina-Systems Baseboard.
+
+config CS75xx_IPC2RCPU
+        depends on ARCH_GOLDENGATE
+        tristate "Cortina Golden Gate IPC to RCPU module"
+        default y
+        help
+          Say Y here to enable support for  IPC to RCPU module provided by the
+          Cortina Golden Gate.
+
+config CS75xx_IPC_WFO
+        depends on ARCH_GOLDENGATE
+        tristate "Cortina Golden Gate Wi-Fi Offload IPC to PE module"
+        default y
+        help
+          Say Y here to enable support for Wi-Fi Offload IPC to PE module
+          provided by the Cortina Golden Gate.
+
 config SGI_SNSC
 	bool "SGI Altix system controller communication support"
 	depends on (IA64_SGI_SN2 || IA64_GENERIC)

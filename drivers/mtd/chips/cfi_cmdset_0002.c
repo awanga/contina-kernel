@@ -39,6 +39,12 @@
 #include <linux/mtd/cfi.h>
 #include <linux/mtd/xip.h>
 
+#ifdef	CONFIG_MACH_CORTINA_G2
+#include <mach/platform.h>
+#include <mach/hardware.h>
+#define PFLASH_READY	0x02000000
+#endif
+
 #define AMD_BOOTLOC_BUG
 #define FORCE_WORD_WRITE 0
 
@@ -49,6 +55,13 @@
 #define SST49LF008A		0x005a
 #define AT49BV6416		0x00d6
 
+#ifdef CONFIG_MTD_CS752X_MULTIFLASH
+#include <mach/platform.h>
+#include <mach/hardware.h>
+#include <linux/semaphore.h>
+#include <mach/cs752x_flash.h>
+extern struct semaphore cs752x_flash_sem;
+#endif
 static int cfi_amdstd_read (struct mtd_info *, loff_t, size_t, size_t *, u_char *);
 static int cfi_amdstd_write_words(struct mtd_info *, loff_t, size_t, size_t *, const u_char *);
 static int cfi_amdstd_write_buffers(struct mtd_info *, loff_t, size_t, size_t *, const u_char *);
@@ -741,6 +754,28 @@ static int __xipram chip_ready(struct map_info *map, unsigned long addr)
 {
 	map_word d, t;
 
+#ifdef	CONFIG_MACH_CORTINA_G2
+	unsigned int tmp;
+	unsigned long timeo;
+
+	timeo = jiffies + HZ*2;
+
+	//printk("%s : flash not ready (%x).\n",__func__,readl(0xf0050008));
+ retry:
+
+	for (;;) {
+		if(PFLASH_READY == (readl(IO_ADDRESS(FLASH_STATUS))&PFLASH_READY))
+			break;
+
+
+
+		if (time_after(jiffies, timeo)) {
+			printk("%s : Waiting for chip to be ready timed out(%x).\n",__func__,readl(IO_ADDRESS(FLASH_STATUS)));
+
+		}
+		goto retry;
+	}
+#endif
 	d = map_read(map, addr);
 	t = map_read(map, addr);
 
@@ -1145,6 +1180,15 @@ static int cfi_amdstd_read (struct mtd_info *mtd, loff_t from, size_t len, size_
 	chipnum = (from >> cfi->chipshift);
 	ofs = from - (chipnum <<  cfi->chipshift);
 
+#ifdef	CONFIG_MACH_CORTINA_G2
+	*retlen = 0;
+
+#ifdef CONFIG_MTD_CS752X_MULTIFLASH
+	down(&cs752x_flash_sem);
+	write_flash_ctrl_reg(FLASH_TYPE, 0x1E00);
+#endif
+#endif /* CONFIG_MACH_CORTINA_G2 */
+
 	while (len) {
 		unsigned long thislen;
 
@@ -1167,6 +1211,10 @@ static int cfi_amdstd_read (struct mtd_info *mtd, loff_t from, size_t len, size_
 		ofs = 0;
 		chipnum++;
 	}
+#ifdef CONFIG_MTD_CS752X_MULTIFLASH
+	up(&cs752x_flash_sem);
+#endif
+
 	return ret;
 }
 
@@ -1660,10 +1708,15 @@ static int __xipram do_write_oneword(struct map_info *map, struct flchip *chip,
 	return ret;
 }
 
-
+#ifndef CONFIG_MACH_CORTINA_G2
 static int cfi_amdstd_write_words(struct mtd_info *mtd, loff_t to, size_t len,
 				  size_t *retlen, const u_char *buf)
 {
+#else /* CONFIG_MACH_CORTINA_G2 */
+static int cfi_amdstd_write_words2(struct mtd_info *mtd, loff_t to, size_t len,
+				  size_t *retlen, const u_char *buf)
+{
+#endif /* CONFIG_MACH_CORTINA_G2 */
 	struct map_info *map = mtd->priv;
 	struct cfi_private *cfi = map->fldrv_priv;
 	int ret = 0;
@@ -1784,6 +1837,25 @@ static int cfi_amdstd_write_words(struct mtd_info *mtd, loff_t to, size_t len,
 	return 0;
 }
 
+#ifdef CONFIG_MACH_CORTINA_G2
+static int cfi_amdstd_write_words(struct mtd_info *mtd, loff_t to, size_t len,
+				  size_t *retlen, const u_char *buf)
+{
+	int rc;
+
+#ifdef CONFIG_MTD_CS752X_MULTIFLASH
+	down(&cs752x_flash_sem);
+	write_flash_ctrl_reg(FLASH_TYPE, 0x1E00);
+#endif
+
+	rc= cfi_amdstd_write_words2(mtd, to, len, retlen, buf);
+
+#ifdef CONFIG_MTD_CS752X_MULTIFLASH
+	up(&cs752x_flash_sem);
+#endif
+	return rc;
+}
+#endif /* CONFIG_MACH_CORTINA_G2 */
 
 /*
  * FIXME: interleaved mode not tested, and probably not supported!
@@ -1915,10 +1987,15 @@ static int __xipram do_write_buffer(struct map_info *map, struct flchip *chip,
 	return ret;
 }
 
-
+#ifndef CONFIG_MACH_CORTINA_G2
 static int cfi_amdstd_write_buffers(struct mtd_info *mtd, loff_t to, size_t len,
 				    size_t *retlen, const u_char *buf)
 {
+#else /* CONFIG_MACH_CORTINA_G2 */
+static int cfi_amdstd_write_buffers2(struct mtd_info *mtd, loff_t to, size_t len,
+				    size_t *retlen, const u_char *buf)
+{
+#endif /* CONFIG_MACH_CORTINA_G2 */
 	struct map_info *map = mtd->priv;
 	struct cfi_private *cfi = map->fldrv_priv;
 	int wbufsize = cfi_interleave(cfi) << cfi->cfiq->MaxBufWriteSize;
@@ -2225,6 +2302,24 @@ static int cfi_amdstd_panic_write(struct mtd_info *mtd, loff_t to, size_t len,
 	return 0;
 }
 
+#ifdef CONFIG_MACH_CORTINA_G2
+static int cfi_amdstd_write_buffers(struct mtd_info *mtd, loff_t to, size_t len,
+				    size_t *retlen, const u_char *buf)
+{
+	int rc;
+#ifdef CONFIG_MTD_CS752X_MULTIFLASH
+	down(&cs752x_flash_sem);
+	write_flash_ctrl_reg(FLASH_TYPE, 0x1E00);
+#endif
+
+	rc = cfi_amdstd_write_buffers2(mtd, to, len, retlen, buf);
+
+#ifdef CONFIG_MTD_CS752X_MULTIFLASH
+	up(&cs752x_flash_sem);
+#endif
+	return rc;
+}
+#endif /* CONFIG_MACH_CORTINA_G2 */
 
 /*
  * Handle devices with one erase region, that only implement
@@ -2420,7 +2515,15 @@ static int cfi_amdstd_erase_varsize(struct mtd_info *mtd, struct erase_info *ins
 	ofs = instr->addr;
 	len = instr->len;
 
+#ifdef CONFIG_MTD_CS752X_MULTIFLASH
+	down(&cs752x_flash_sem);
+	write_flash_ctrl_reg(FLASH_TYPE, 0x1E00);
+#endif
 	ret = cfi_varsize_frob(mtd, do_erase_oneblock, ofs, len, NULL);
+
+#ifdef CONFIG_MTD_CS752X_MULTIFLASH
+		up(&cs752x_flash_sem);
+#endif
 	if (ret)
 		return ret;
 
